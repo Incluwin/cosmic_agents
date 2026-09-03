@@ -32,6 +32,21 @@ class PoisonGolemActorBehaviorTest {
         }
         PoisonGolemSummonedAddBehavior.MOB_IDS.forEach(id ->
                 assertTrue(ServerMobBehaviorRegistry.supports(id)));
+        var stageTwo = ServerMobBehaviorRegistry.behaviorFor(
+                EpqPoisonedStoneBugBehavior.MOB_ID).orElseThrow();
+        assertTrue(stageTwo.forceServerAuthority());
+        assertTrue(stageTwo.usesServerMobPhysics());
+        assertTrue(stageTwo.usesPrimaryAggroTargetOnly());
+    }
+
+    @Test
+    void everyGolemFormHasAnOrdinaryHitAndAllAuthoredSkillsRemainAvailable() {
+        assertEquals(2, ServerMobActionCatalog.forMob(9_300_180).skills().size());
+        assertEquals(4, ServerMobActionCatalog.forMob(9_300_181).skills().size());
+        assertEquals(10, ServerMobActionCatalog.forMob(9_300_182).skills().size());
+        for (int id : PoisonGolemActorBehavior.MOB_IDS) {
+            assertTrue(!ServerMobActionCatalog.forMob(id).attacks().isEmpty());
+        }
     }
 
     @Test

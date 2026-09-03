@@ -79,6 +79,21 @@ class AgentEpqSessionTest {
         assertFalse(AgentEpqCoordinator.mayCollectStageFiveStone(mixed, 10));
     }
 
+    @Test
+    void sessionAndMemberAnnouncementsAreOneShotAndLureTagsReset() {
+        AgentEpqSession session = session(5);
+        assertTrue(session.claimAnnouncement("stage-progress"));
+        assertFalse(session.claimAnnouncement("stage-progress"));
+
+        AgentEpqMemberState member = session.member(1);
+        member.tagStageTwoObject(77, 500L);
+        assertEquals(77, member.stageTwoTaggedObjectId());
+        assertEquals(500L, member.stageTwoTaggedAtMs());
+        member.clearStageTwoTag();
+        assertEquals(0, member.stageTwoTaggedObjectId());
+        assertEquals(0L, member.stageTwoTaggedAtMs());
+    }
+
     private static AgentEpqSession session(int memberCount) {
         AgentEpqSession session = new AgentEpqSession(AgentEpqSession.Mode.TEST_OBSERVATION, 7L, 1, 10L);
         for (int id = 1; id <= memberCount; id++) {

@@ -7,6 +7,7 @@ import server.life.autonomy.balrog.EasyBalrogReleasedClawBehavior;
 import server.life.autonomy.papapixie.PapaPixieActorBehavior;
 import server.life.autonomy.poisongolem.PoisonGolemActorBehavior;
 import server.life.autonomy.poisongolem.PoisonGolemSummonedAddBehavior;
+import server.life.autonomy.poisongolem.EpqPoisonedStoneBugBehavior;
 import server.life.autonomy.lordpirate.LordPirateActorBehavior;
 
 import java.util.HashMap;
@@ -39,6 +40,7 @@ public final class ServerMobBehaviorRegistry {
                 register(result, new PoisonGolemActorBehavior(id)));
         PoisonGolemSummonedAddBehavior.MOB_IDS.forEach(id ->
                 register(result, new PoisonGolemSummonedAddBehavior(id)));
+        register(result, new EpqPoisonedStoneBugBehavior());
         LordPirateActorBehavior.MOB_IDS.forEach(id ->
                 register(result, new LordPirateActorBehavior(id)));
         return Map.copyOf(result);

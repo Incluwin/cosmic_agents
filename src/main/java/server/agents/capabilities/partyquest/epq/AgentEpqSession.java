@@ -7,6 +7,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.HashSet;
+import java.util.Set;
 
 /** EPQ aggregate root; no state is shared with another party quest. */
 public final class AgentEpqSession {
@@ -22,6 +24,7 @@ public final class AgentEpqSession {
     private final int operatorId;
     private final long startedAtMs;
     private final Map<Integer, AgentEpqMemberState> members = new LinkedHashMap<>();
+    private final Set<String> announcements = new HashSet<>();
     private Phase phase = Phase.PREPARING;
     private int eventLeaderId;
     private int executionAgentId;
@@ -109,5 +112,8 @@ public final class AgentEpqSession {
     public synchronized long observeBossCleared(long nowMs) {
         if (bossClearedAtMs == 0L) { bossClearedAtMs = nowMs; markProgress(nowMs); }
         return bossClearedAtMs;
+    }
+    public synchronized boolean claimAnnouncement(String key) {
+        return key != null && !key.isBlank() && announcements.add(key);
     }
 }

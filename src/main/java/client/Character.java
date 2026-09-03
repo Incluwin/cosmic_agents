@@ -2196,6 +2196,11 @@ public class Character extends AbstractCharacterObject {
         }
 
         if (ob instanceof MapItem mapitem) {
+            if (server.life.EpqConcentratedPoisonPolicy.blocksPickup(this, mapitem)) {
+                sendPacket(PacketCreator.showItemUnavailable());
+                sendPacket(PacketCreator.enableActions());
+                return;
+            }
             if (System.currentTimeMillis() - mapitem.getDropTime() < 400 || !mapitem.canBePickedBy(this)) {
                 sendPacket(PacketCreator.enableActions());
                 return;
