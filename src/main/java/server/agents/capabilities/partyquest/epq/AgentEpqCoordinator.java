@@ -147,6 +147,14 @@ public final class AgentEpqCoordinator {
     private static void stageTwo(AgentEpqSession session, AgentRuntimeEntry entry, Character agent,
                                  AgentEpqMemberState member, long nowMs) {
         boolean carrier = agent.getId() == workAgentId(session);
+        Point position = agent.getPosition();
+        Point landing = ACTIONS.groundPoint(agent.getMap(), position);
+        boolean aboveLandingFoothold = landing != null && landing.y - position.y > 40;
+        if (!ACTIONS.grounded(agent) || aboveLandingFoothold) {
+            ACTIONS.prepareNavigation(entry, agent);
+            ACTIONS.navigate(entry, landing == null ? new Point(position) : landing, true);
+            return;
+        }
         Reactor spine = agent.getMap().getReactorById(AgentEpqDefinition.SPINE_REACTOR);
         if (carrier && spine != null && spine.getState() > 0 && spine.getState() < 4
                 && session.claimAnnouncement("stage2-progress-" + spine.getState())) {
@@ -176,7 +184,7 @@ public final class AgentEpqCoordinator {
                 .filter(Monster::isAlive)
                 .filter(mob -> mob.getId() == AgentEpqDefinition.STAGE_TWO_MOB)
                 .toList();
-        List<Integer> lurers = stageTwoLurerIds(session, agent.getMap());
+        List<Integer> lurers = stageTwoLurerIds(session);
         int lureSide = lurers.indexOf(agent.getId());
         Monster tagged = bugs.stream()
                 .filter(mob -> mob.getObjectId() == member.stageTwoTaggedObjectId())
@@ -463,13 +471,15 @@ public final class AgentEpqCoordinator {
         List<Integer> agents = agentIds(session, agent.getMap());
         int index = Math.max(0, agents.indexOf(agent.getId()));
         int offset = (index - agents.size() / 2) * 36;
-        Point candidate = new Point(pond.x + offset, pond.y);
+        Point candidate = new Point(pond.x + offset, pond.y - 96);
         Point ground = ACTIONS.groundPoint(agent.getMap(), candidate);
-        return ground == null ? candidate : ground;
+        return ground == null ? new Point(pond.x + offset, agent.getPosition().y) : ground;
     }
 
-    private static List<Integer> stageTwoLurerIds(AgentEpqSession session, MapleMap map) {
-        return agentIds(session, map).stream()
+    private static List<Integer> stageTwoLurerIds(AgentEpqSession session) {
+        return session.members().stream()
+                .filter(member -> member.memberType() == AgentEpqMemberState.MemberType.AGENT)
+                .map(AgentEpqMemberState::characterId)
                 .map(AgentEpqCoordinator::character)
                 .filter(java.util.Objects::nonNull)
                 .sorted(Comparator.comparingInt(candidate ->
