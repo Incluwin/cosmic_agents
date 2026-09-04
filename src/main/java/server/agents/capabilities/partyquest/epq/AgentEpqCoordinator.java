@@ -148,7 +148,7 @@ public final class AgentEpqCoordinator {
 
     private static void stageTwo(AgentEpqSession session, AgentRuntimeEntry entry, Character agent,
                                  AgentEpqMemberState member, long nowMs) {
-        boolean carrier = agent.getId() == workAgentId(session);
+        boolean coordinator = agent.getId() == workAgentId(session);
         Point position = agent.getPosition();
         Point landing = ACTIONS.groundPoint(agent.getMap(), position);
         boolean aboveLandingFoothold = landing != null && landing.y - position.y > 40;
@@ -158,14 +158,14 @@ public final class AgentEpqCoordinator {
             return;
         }
         Reactor spine = agent.getMap().getReactorById(AgentEpqDefinition.SPINE_REACTOR);
-        if (carrier && spine != null && spine.getState() > 0
+        if (coordinator && spine != null && spine.getState() > 0
                 && spine.getState() < STAGE_TWO_BOTTLES_REQUIRED
                 && session.claimAnnouncement("stage2-progress-" + spine.getState())) {
             sendVisiblePartyChat(agent, "Filled bottles applied: " + spine.getState()
                     + "/" + STAGE_TWO_BOTTLES_REQUIRED + ".");
         }
         if (spine != null && spine.getState() >= STAGE_TWO_BOTTLES_REQUIRED) {
-            if (carrier && session.claimAnnouncement(
+            if (coordinator && session.claimAnnouncement(
                     "stage2-progress-" + STAGE_TWO_BOTTLES_REQUIRED)) {
                 sendVisiblePartyChat(agent, "Filled bottles applied: "
                         + STAGE_TWO_BOTTLES_REQUIRED + "/" + STAGE_TWO_BOTTLES_REQUIRED
@@ -176,7 +176,8 @@ public final class AgentEpqCoordinator {
         }
         Reactor pond = agent.getMap().getReactorById(AgentEpqDefinition.POND_REACTOR);
         if (pond == null) { ACTIONS.stop(entry); return; }
-        if (carrier && ACTIONS.itemCount(agent, AgentEpqDefinition.PURIFIED_POISON) > 0
+        int securedBottles = stageTwoSecuredBottleCount(session, agent, spine);
+        if (ACTIONS.itemCount(agent, AgentEpqDefinition.PURIFIED_POISON) > 0
                 && spine != null) {
             if (dropAt(session, entry, agent, InventoryType.ETC,
                     AgentEpqDefinition.PURIFIED_POISON, spine.getPosition(), member, nowMs)) {
@@ -186,7 +187,19 @@ public final class AgentEpqCoordinator {
             }
             return;
         }
-        if (carrier && member.stageTwoReturningToTree()) {
+        if (securedBottles >= STAGE_TWO_BOTTLES_REQUIRED) {
+            member.finishStageTwoTreeReturn();
+            if (coordinator && session.claimAnnouncement("stage2-bottles-secured")) {
+                sendVisiblePartyChat(agent,
+                        "Four filled bottles secured. Everyone head to the right-side exit.");
+            }
+            Point exit = ACTIONS.portalPosition(agent, 3);
+            if (exit == null) ACTIONS.stop(entry);
+            else if (!near(agent.getPosition(), exit, PORTAL_RADIUS)) ACTIONS.navigate(entry, exit, true);
+            else ACTIONS.stop(entry);
+            return;
+        }
+        if (member.stageTwoReturningToTree()) {
             Point rally = stageTwoRallyPoint(session, agent, pond.getPosition());
             if (!near(agent.getPosition(), rally, 45)) {
                 ACTIONS.navigate(entry, rally, true);
@@ -233,15 +246,13 @@ public final class AgentEpqCoordinator {
             attackTarget(entry, agent, atPond, member, nowMs, false);
             return;
         }
-        if (carrier) {
-            int bottlesBefore = ACTIONS.itemCount(agent, AgentEpqDefinition.PURIFIED_POISON);
-            if (collectNearest(entry, agent, Set.of(AgentEpqDefinition.PURIFIED_POISON))) {
-                if (ACTIONS.itemCount(agent, AgentEpqDefinition.PURIFIED_POISON) > bottlesBefore) {
-                    sendVisiblePartyChat(agent,
-                            "Filled bottle collected. Taking it to the thorns.");
-                }
-                return;
+        int bottlesBefore = ACTIONS.itemCount(agent, AgentEpqDefinition.PURIFIED_POISON);
+        if (collectNearest(entry, agent, Set.of(AgentEpqDefinition.PURIFIED_POISON))) {
+            if (ACTIONS.itemCount(agent, AgentEpqDefinition.PURIFIED_POISON) > bottlesBefore) {
+                sendVisiblePartyChat(agent,
+                        "Filled bottle collected. Taking it to the thorns.");
             }
+            return;
         }
         if (lureSide < 0) {
             Point rally = stageTwoRallyPoint(session, agent, pond.getPosition());
@@ -678,6 +689,29 @@ public final class AgentEpqCoordinator {
         for (MapItem drop : AgentMapPerception.items(observer.getMap())) {
             if (!drop.isPickedUp() && drop.getItemId() == itemId && drop.getItem() != null) {
                 total += drop.getItem().getQuantity();
+            }
+        }
+        return total;
+    }
+
+    private static int stageTwoSecuredBottleCount(
+            AgentEpqSession session, Character observer, Reactor spine) {
+        int total = spine == null ? 0 : spine.getState();
+        for (AgentEpqMemberState member : session.members()) {
+            Character character = character(member.characterId());
+            if (character != null && character.getMap() == observer.getMap()) {
+                total += ACTIONS.itemCount(character, AgentEpqDefinition.PURIFIED_POISON);
+            }
+        }
+        if (spine != null) {
+            for (MapItem drop : AgentMapPerception.items(observer.getMap())) {
+                if (!drop.isPickedUp()
+                        && drop.getItemId() == AgentEpqDefinition.PURIFIED_POISON
+                        && drop.getPosition() != null
+                        && spine.getArea().contains(drop.getPosition())
+                        && drop.getItem() != null) {
+                    total += drop.getItem().getQuantity();
+                }
             }
         }
         return total;
