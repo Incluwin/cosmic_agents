@@ -153,6 +153,24 @@ class MobPhysicsServiceTest {
     }
 
     @Test
+    void monsterInstanceCanExtendOnlyItsOwnAgentAggroLease() {
+        Fixture fixture = fixture(true, 1);
+        fixture.monster.setAgentPhysicsAggroTimeoutOverrideMs(45_000L);
+
+        assertTrue(service.acceptedHit(fixture.agent, fixture.monster, 10, 0));
+        MobSimulationSession session = service.sessionForTest(fixture.monster);
+        long base = System.nanoTime() + 1_000_000_000L;
+        session.acceptHit(fixture.agent, 10, 0, 1, base);
+
+        service.tickForTest(base + 7_000_000_000L);
+        assertEquals(1, service.activeSessionCountForTest());
+        service.tickForTest(base + 44_999_000_000L);
+        assertEquals(1, service.activeSessionCountForTest());
+        service.tickForTest(base + 45_000_000_000L);
+        assertEquals(0, service.activeSessionCountForTest());
+    }
+
+    @Test
     void ordinaryServerAggroRunsWithoutObserverAndReleasesCombatWithPhysics() {
         MapleMap map = mock(MapleMap.class);
         when(map.isObservedByPlayer()).thenReturn(false);

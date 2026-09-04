@@ -109,6 +109,7 @@ public class Monster extends AbstractLoadedLife {
     private volatile int pinnedBossControllerId;
     private volatile MobControlAuthority controlAuthority = MobControlAuthority.NONE;
     private volatile MobMovementSnapshot lastClientMovement;
+    private volatile long agentPhysicsAggroTimeoutOverrideMs;
     private final Collection<MonsterListener> listeners = new LinkedList<>();
     private final EnumMap<MonsterStatus, MonsterStatusEffect> stati = new EnumMap<>(MonsterStatus.class);
     private final ArrayList<MonsterStatus> alreadyBuffed = new ArrayList<>();
@@ -1080,6 +1081,15 @@ public class Monster extends AbstractLoadedLife {
 
     public MobControlAuthority getControlAuthority() {
         return controlAuthority;
+    }
+
+    /** Optional instance-local Agent pursuit lease; zero retains the server default. */
+    public long getAgentPhysicsAggroTimeoutOverrideMs() {
+        return agentPhysicsAggroTimeoutOverrideMs;
+    }
+
+    public void setAgentPhysicsAggroTimeoutOverrideMs(long timeoutMs) {
+        agentPhysicsAggroTimeoutOverrideMs = Math.max(0L, timeoutMs);
     }
 
     public MobMovementSnapshot getLastClientMovement() {

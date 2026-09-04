@@ -2,7 +2,6 @@ package server.agents.capabilities.partyquest.epq;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -90,6 +89,17 @@ class AgentEpqSessionTest {
         assertEquals(77, member.stageTwoTaggedObjectId());
         member.clearStageTwoTag();
         assertEquals(0, member.stageTwoTaggedObjectId());
+    }
+
+    @Test
+    void lobbyAgentsChatInOrderDuringLeaderCountdown() {
+        AgentEpqSession session = session(5);
+
+        assertEquals(10L, AgentEpqCoordinator.lobbyChatAt(session, 1));
+        assertEquals(660L, AgentEpqCoordinator.lobbyChatAt(session, 2));
+        assertEquals(1_310L, AgentEpqCoordinator.lobbyChatAt(session, 3));
+        assertEquals("Ready for EPQ!", AgentEpqCoordinator.lobbyReadyMessage(session, 2));
+        assertEquals("Ready. Let's go!", AgentEpqCoordinator.lobbyReadyMessage(session, 3));
     }
 
     private static AgentEpqSession session(int memberCount) {

@@ -422,7 +422,11 @@ public final class MobPhysicsService extends BaseService {
         if (monster.getMap() != map) return ReleaseReason.MAP_CHANGE;
         if (!agent.isAlive()) return ReleaseReason.AGENT_DEATH;
         if (agent.getMap() != map) return ReleaseReason.AGENT_DEPARTURE;
-        if (session.agentHitLeaseExpiredNanos(nowNanos, aggroTimeoutNanos)) {
+        long timeoutOverrideMs = monster.getAgentPhysicsAggroTimeoutOverrideMs();
+        long effectiveAggroTimeoutNanos = timeoutOverrideMs > 0L
+                ? Math.min(timeoutOverrideMs, Long.MAX_VALUE / 1_000_000L) * 1_000_000L
+                : aggroTimeoutNanos;
+        if (session.agentHitLeaseExpiredNanos(nowNanos, effectiveAggroTimeoutNanos)) {
             return ReleaseReason.AGGRO_TIMEOUT;
         }
         return null;

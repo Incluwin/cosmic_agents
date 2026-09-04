@@ -13,6 +13,7 @@ import server.agents.capabilities.combat.AgentCombatPlanRuntime;
 import server.agents.capabilities.combat.AgentCombatSkillConstraintState;
 import server.agents.integration.AgentCharacterGatewayRuntime;
 import server.agents.integration.AgentInventoryGatewayRuntime;
+import server.agents.integration.AgentPacketGatewayRuntime;
 import server.agents.integration.AgentPartyQuestGatewayRuntime;
 import server.agents.integration.AgentPartyGatewayRuntime;
 import server.agents.integration.AgentPrimitiveCapabilityGatewayRuntime;
@@ -45,9 +46,10 @@ public final class AgentEpqCoordinator {
             "server.agents.capabilities.partyquest.epq.AgentEpqCoordinator.BOSS_LOOT_SETTLE_MS");
     private static final long ITEM_REACTOR_SETTLE_MS = 5_500L;
     private static final long LOBBY_ENTRY_DELAY_MS = 5_000L;
+    private static final long LOBBY_CHAT_STAGGER_MS = 650L;
     private static final int ITEM_REACTOR_DROP_RADIUS = 40;
     private static final int LOOT_RADIUS = 75;
-    private static final int STAGE_TWO_LURE_STEP = 180;
+    private static final long STAGE_TWO_AGGRO_TIMEOUT_MS = 45_000L;
     private static final int PORTAL_RADIUS = config.AgentTuning.intValue(
             "server.agents.capabilities.partyquest.epq.AgentEpqCoordinator.PORTAL_RADIUS");
     private static final int NPC_RADIUS = config.AgentTuning.intValue(
@@ -116,12 +118,12 @@ public final class AgentEpqCoordinator {
 
     private static void enterEvent(AgentEpqSession session, AgentRuntimeEntry entry, Character agent,
                                    AgentEpqMemberState member, long nowMs) {
-        if (agent.getId() == workAgentId(session)
-                && session.claimAnnouncement("lobby-entry")) {
+        long chatAt = lobbyChatAt(session, agent.getId());
+        if (nowMs >= chatAt && member.claimAnnouncement("lobby-entry")) {
             boolean agentLeader = agent.getId() == session.eventLeaderId();
-            AgentPartyGatewayRuntime.party().sendPartyChat(agent, agentLeader
+            sendVisiblePartyChat(agent, agentLeader
                     ? "Party ready. We're entering EPQ in 5 seconds."
-                    : "We're all ready. Leader, take us into EPQ when you're ready.");
+                    : lobbyReadyMessage(session, agent.getId()));
             if (agentLeader) member.deferUntil(nowMs + LOBBY_ENTRY_DELAY_MS);
             ACTIONS.stop(entry);
             return;
@@ -135,16 +137,11 @@ public final class AgentEpqCoordinator {
 
     private static void stageOne(AgentRuntimeEntry entry, Character agent,
                                  AgentEpqMemberState member, long nowMs) {
-        Monster leftmost = AgentMapPerception.monsters(agent.getMap()).stream()
-                .filter(Monster::isAlive)
-                .filter(mob -> mob.getId() == AgentEpqDefinition.STAGE_ONE_MOB)
-                .min(Comparator.comparingInt(mob -> mob.getPosition().x))
-                .orElse(null);
-        if (leftmost == null) {
+        if (ACTIONS.liveMonsterCount(agent, Set.of(AgentEpqDefinition.STAGE_ONE_MOB)) == 0) {
             enterPortal(entry, agent, 3, member, nowMs);
             return;
         }
-        attackTarget(entry, agent, leftmost, member, nowMs, false);
+        ACTIONS.grind(entry, Set.of(AgentEpqDefinition.STAGE_ONE_MOB));
     }
 
     private static void stageTwo(AgentEpqSession session, AgentRuntimeEntry entry, Character agent,
@@ -181,12 +178,27 @@ public final class AgentEpqCoordinator {
                 .toList();
         List<Integer> lurers = stageTwoLurerIds(session, agent.getMap());
         int lureSide = lurers.indexOf(agent.getId());
+        Monster tagged = bugs.stream()
+                .filter(mob -> mob.getObjectId() == member.stageTwoTaggedObjectId())
+                .findFirst().orElse(null);
+        if (lureSide >= 0 && tagged != null
+                && (tagged.getPosition() == null || !pond.getArea().contains(tagged.getPosition()))) {
+            Point lure = stageTwoRallyPoint(session, agent, pond.getPosition());
+            if (!near(agent.getPosition(), lure, 45)) ACTIONS.navigate(entry, lure, true);
+            else ACTIONS.stop(entry);
+            return;
+        }
+        if (lureSide >= 0 && tagged != null) {
+            member.clearStageTwoTag();
+            member.deferUntil(nowMs + ACTION_RETRY_MS);
+            ACTIONS.stop(entry);
+            return;
+        }
         Monster atPond = bugs.stream()
                 .filter(mob -> mob.getPosition() != null && pond.getArea().contains(mob.getPosition()))
                 .min(Comparator.comparingLong(Monster::getHp))
                 .orElse(null);
-        if (atPond != null) {
-            member.clearStageTwoTag();
+        if (atPond != null && lureSide < 0) {
             attackTarget(entry, agent, atPond, member, nowMs, false);
             return;
         }
@@ -204,14 +216,11 @@ public final class AgentEpqCoordinator {
             return;
         }
 
-        Monster target = bugs.stream()
-                .filter(mob -> mob.getObjectId() == member.stageTwoTaggedObjectId())
-                .findFirst()
-                .orElseGet(() -> stageTwoSideTarget(bugs, pond.getPosition(), lureSide));
-        if (target == null) { ACTIONS.stop(entry); return; }
-        if (member.stageTwoTaggedObjectId() == target.getObjectId()) {
-            Point lure = stageTwoLurePoint(agent, target.getPosition(), pond.getPosition());
-            if (!near(agent.getPosition(), lure, 45)) ACTIONS.navigate(entry, lure, true);
+        Monster target = stageTwoSideTarget(
+                bugs, pond.getPosition(), pond.getArea(), lureSide);
+        if (target == null) {
+            Point rally = stageTwoRallyPoint(session, agent, pond.getPosition());
+            if (!near(agent.getPosition(), rally, 45)) ACTIONS.navigate(entry, rally, true);
             else ACTIONS.stop(entry);
             return;
         }
@@ -432,7 +441,10 @@ public final class AgentEpqCoordinator {
         }
         AgentAttackTransactionResult attack = AgentCombatAttackRuntime.attackMonster(entry, agent, skill);
         if (!attack.committed()) return;
-        if (preserveOutsidePond) member.tagStageTwoObject(target.getObjectId());
+        if (preserveOutsidePond && attack.hitLines() > 0) {
+            target.setAgentPhysicsAggroTimeoutOverrideMs(STAGE_TWO_AGGRO_TIMEOUT_MS);
+            member.tagStageTwoObject(target.getObjectId());
+        }
         member.deferUntil(nowMs + ACTION_RETRY_MS);
     }
 
@@ -445,14 +457,6 @@ public final class AgentEpqCoordinator {
                 planned.hitBox, List.of(target), planned.route, planned.display, planned.direction,
                 planned.rangedDirection, planned.stance, planned.speed, planned.hitDelayMs,
                 planned.cooldownMs, planned.damageWeaponType);
-    }
-
-    private static Point stageTwoLurePoint(Character agent, Point monster, Point pond) {
-        int distance = pond.x - monster.x;
-        int step = Math.min(Math.abs(distance), STAGE_TWO_LURE_STEP);
-        Point candidate = new Point(monster.x + Integer.signum(distance) * step, monster.y);
-        Point ground = ACTIONS.groundPoint(agent.getMap(), candidate);
-        return ground == null ? candidate : ground;
     }
 
     private static Point stageTwoRallyPoint(AgentEpqSession session, Character agent, Point pond) {
@@ -475,10 +479,13 @@ public final class AgentEpqCoordinator {
                 .toList();
     }
 
-    private static Monster stageTwoSideTarget(List<Monster> bugs, Point pond, int lureSide) {
+    private static Monster stageTwoSideTarget(
+            List<Monster> bugs, Point pond, java.awt.Rectangle pondArea, int lureSide) {
         Comparator<Monster> sideOrder = Comparator.comparingInt(mob -> mob.getPosition().x);
         if (lureSide == 1) sideOrder = sideOrder.reversed();
         Monster sideTarget = bugs.stream()
+                .filter(mob -> mob.getPosition() != null
+                        && (pondArea == null || !pondArea.contains(mob.getPosition())))
                 .filter(mob -> lureSide == 0
                         ? mob.getPosition().x < pond.x
                         : mob.getPosition().x >= pond.x)
@@ -507,6 +514,37 @@ public final class AgentEpqCoordinator {
         return session.members().stream()
                 .filter(member -> member.memberType() == AgentEpqMemberState.MemberType.AGENT)
                 .mapToInt(AgentEpqMemberState::characterId).min().orElse(session.executionAgentId());
+    }
+
+    static long lobbyChatAt(AgentEpqSession session, int characterId) {
+        if (characterId == session.eventLeaderId()) return session.startedAtMs();
+        List<Integer> followers = session.members().stream()
+                .filter(member -> member.memberType() == AgentEpqMemberState.MemberType.AGENT)
+                .map(AgentEpqMemberState::characterId)
+                .filter(id -> id != session.eventLeaderId())
+                .sorted().toList();
+        int index = Math.max(0, followers.indexOf(characterId));
+        return session.startedAtMs() + (index + 1L) * LOBBY_CHAT_STAGGER_MS;
+    }
+
+    static String lobbyReadyMessage(AgentEpqSession session, int characterId) {
+        List<Integer> followers = session.members().stream()
+                .filter(member -> member.memberType() == AgentEpqMemberState.MemberType.AGENT)
+                .map(AgentEpqMemberState::characterId)
+                .filter(id -> id != session.eventLeaderId())
+                .sorted().toList();
+        int index = Math.max(0, followers.indexOf(characterId));
+        return switch (Math.floorMod(index, 4)) {
+            case 0 -> "Ready for EPQ!";
+            case 1 -> "Ready. Let's go!";
+            case 2 -> "I'll take the nearby mobs.";
+            default -> "All set!";
+        };
+    }
+
+    private static void sendVisiblePartyChat(Character speaker, String message) {
+        AgentPartyGatewayRuntime.party().sendPartyChat(speaker, message);
+        AgentPacketGatewayRuntime.packets().broadcastChatText(speaker, message, false, 0);
     }
 
     private static int fragmentCollectorId(AgentEpqSession session) {
