@@ -181,6 +181,8 @@ public final class AgentEpqCoordinator {
             if (dropAt(session, entry, agent, InventoryType.ETC,
                     AgentEpqDefinition.PURIFIED_POISON, spine.getPosition(), member, nowMs)) {
                 member.beginStageTwoTreeReturn();
+                sendVisiblePartyChat(agent,
+                        "Filled bottle dropped at the thorns. Returning to the tree.");
             }
             return;
         }
@@ -231,8 +233,16 @@ public final class AgentEpqCoordinator {
             attackTarget(entry, agent, atPond, member, nowMs, false);
             return;
         }
-        if (carrier && collectNearest(entry, agent,
-                Set.of(AgentEpqDefinition.PURIFIED_POISON))) return;
+        if (carrier) {
+            int bottlesBefore = ACTIONS.itemCount(agent, AgentEpqDefinition.PURIFIED_POISON);
+            if (collectNearest(entry, agent, Set.of(AgentEpqDefinition.PURIFIED_POISON))) {
+                if (ACTIONS.itemCount(agent, AgentEpqDefinition.PURIFIED_POISON) > bottlesBefore) {
+                    sendVisiblePartyChat(agent,
+                            "Filled bottle collected. Taking it to the thorns.");
+                }
+                return;
+            }
+        }
         if (lureSide < 0) {
             Point rally = stageTwoRallyPoint(session, agent, pond.getPosition());
             if (!near(agent.getPosition(), rally, 45)) ACTIONS.navigate(entry, rally, true);
@@ -759,9 +769,9 @@ public final class AgentEpqCoordinator {
             AgentRuntimeEntry entry, Character agent, InventoryType type, int itemId, short quantity) {
         var inventory = agent == null ? null : agent.getInventory(type);
         Item item = inventory == null ? null : inventory.findById(itemId);
-        boolean epqOwned = agent != null && AgentEpqDefinition.EXCLUSIVE_ITEMS.contains(itemId)
-                && AgentEpqSessionRegistry.active(agent.getId())
-                && AgentEpqSessionRegistry.canLootExclusive(agent, itemId);
+        // This helper is private to the EPQ coordinator. Its objective items must
+        // remain usable even if the generic loot capability reserved the stack.
+        boolean epqOwned = AgentEpqDefinition.EXCLUSIVE_ITEMS.contains(itemId);
         if (item == null || item.getQuantity() <= 0
                 || (!epqOwned && !AgentInventoryReservationRuntime.mayConsume(
                 entry, item, System.currentTimeMillis()))) return false;
