@@ -22,29 +22,10 @@ public final class AgentCombatPlanRuntime {
                                              AgentCombatConfig.Config config) {
         long startedAt = System.nanoTime();
         try {
-            List<AgentAttackPlan> candidates = new ArrayList<>(3);
+            List<AgentAttackPlan> candidates = new ArrayList<>(skillAttackCandidates(
+                    entry, bot, target, config));
             boolean sealed = bot.hasDisease(Disease.SEAL);
-
-            List<Integer> attackSkillIds = AgentCombatSkillClassifier.cachedAttackSkillIds(
-                    AgentCombatSkillCacheStateRuntime.attackSkillIds(entry),
-                    AgentCombatSkillCacheStateRuntime.attackSkillId(entry),
-                    AgentCombatSkillCacheStateRuntime.aoeSkillId(entry));
-            int requiredSkillId = entry.capabilityStates()
-                    .require(AgentCombatSkillConstraintState.STATE_KEY).requiredSkillId();
-            if (requiredSkillId > 0) {
-                attackSkillIds = attackSkillIds.stream()
-                        .filter(skillId -> skillId == requiredSkillId)
-                        .toList();
-            }
-            if (!sealed) {
-                for (int skillId : attackSkillIds) {
-                    AgentAttackPlan skillAttack = AgentSkillAttackPlanRuntime.planSkillAttack(bot, target, skillId, config);
-                    skillAttack = AgentCombatObjectiveTargetStateRuntime.restrictAttackPlan(entry, skillAttack);
-                    if (skillAttack != null) {
-                        candidates.add(skillAttack);
-                    }
-                }
-            }
+            List<Integer> attackSkillIds = attackSkillIds(entry);
 
             // A wand swing is the emergency fallback for a magician, not a competing damage plan. Allowing
             // it into the score alongside a usable spell can select an invisible-looking basic hit at melee
@@ -63,6 +44,39 @@ public final class AgentCombatPlanRuntime {
         } finally {
             AgentPerformanceMonitor.record("combat-plan", System.nanoTime() - startedAt);
         }
+    }
+
+    /** Plans an attack skill without allowing the normal basic-attack fallback. */
+    public static AgentAttackPlan planSkillAttackOnly(AgentRuntimeEntry entry, Character bot, Monster target,
+                                                       AgentCombatConfig.Config config) {
+        List<AgentAttackPlan> candidates = skillAttackCandidates(entry, bot, target, config);
+        WeaponType weaponType = AgentAttackExecutionProvider.getEquippedWeaponType(bot);
+        return AgentAttackPlanScoringPolicy.selectBestAttackPlan(
+                bot, preferRangedBossCandidates(target, weaponType, candidates));
+    }
+
+    private static List<AgentAttackPlan> skillAttackCandidates(
+            AgentRuntimeEntry entry, Character bot, Monster target, AgentCombatConfig.Config config) {
+        if (bot.hasDisease(Disease.SEAL)) return List.of();
+        List<AgentAttackPlan> candidates = new ArrayList<>(3);
+        for (int skillId : attackSkillIds(entry)) {
+            AgentAttackPlan skillAttack = AgentSkillAttackPlanRuntime.planSkillAttack(
+                    bot, target, skillId, config);
+            skillAttack = AgentCombatObjectiveTargetStateRuntime.restrictAttackPlan(entry, skillAttack);
+            if (skillAttack != null) candidates.add(skillAttack);
+        }
+        return candidates;
+    }
+
+    private static List<Integer> attackSkillIds(AgentRuntimeEntry entry) {
+        List<Integer> attackSkillIds = AgentCombatSkillClassifier.cachedAttackSkillIds(
+                AgentCombatSkillCacheStateRuntime.attackSkillIds(entry),
+                AgentCombatSkillCacheStateRuntime.attackSkillId(entry),
+                AgentCombatSkillCacheStateRuntime.aoeSkillId(entry));
+        int requiredSkillId = entry.capabilityStates()
+                .require(AgentCombatSkillConstraintState.STATE_KEY).requiredSkillId();
+        if (requiredSkillId <= 0) return attackSkillIds;
+        return attackSkillIds.stream().filter(skillId -> skillId == requiredSkillId).toList();
     }
 
     static boolean hasUsableMagicSkill(List<AgentAttackPlan> candidates) {

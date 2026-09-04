@@ -7,8 +7,9 @@ import server.agents.capabilities.inventory.AgentInventoryReservationRuntime;
 import server.agents.capabilities.combat.AgentAttackDamageProfileService;
 import server.agents.capabilities.combat.AgentAttackPlan;
 import server.agents.capabilities.combat.AgentAttackTransactionResult;
-import server.agents.capabilities.combat.AgentBasicAttackPlanRuntime;
 import server.agents.capabilities.combat.AgentCombatAttackRuntime;
+import server.agents.capabilities.combat.AgentCombatConfig;
+import server.agents.capabilities.combat.AgentCombatPlanRuntime;
 import server.agents.integration.AgentCharacterGatewayRuntime;
 import server.agents.integration.AgentInventoryGatewayRuntime;
 import server.agents.integration.AgentPartyQuestGatewayRuntime;
@@ -281,13 +282,12 @@ public final class AgentEpqCoordinator {
             }
             return;
         }
-        AgentAttackPlan basic = AgentBasicAttackPlanRuntime.planBasicAttack(agent, target);
-        if (basic == null || basic.primaryTarget() != target
-                || conservativeMaximumDamage(agent, basic) >= target.getHp()) {
+        AgentAttackPlan skill = singleTargetSkillPlan(entry, agent, target);
+        if (skill == null || conservativeMaximumDamage(agent, skill) >= target.getHp()) {
             member.deferUntil(nowMs + ACTION_RETRY_MS);
             return;
         }
-        AgentAttackTransactionResult attack = AgentCombatAttackRuntime.attackMonster(entry, agent, basic);
+        AgentAttackTransactionResult attack = AgentCombatAttackRuntime.attackMonster(entry, agent, skill);
         if (attack.committed()) session.markProgress(nowMs);
     }
 
@@ -419,20 +419,31 @@ public final class AgentEpqCoordinator {
     private static void attackTarget(AgentRuntimeEntry entry, Character agent, Monster target,
                                      AgentEpqMemberState member, long nowMs,
                                      boolean preserveOutsidePond) {
-        AgentAttackPlan basic = AgentBasicAttackPlanRuntime.planBasicAttack(agent, target);
-        if (basic == null || basic.primaryTarget() != target) {
+        AgentAttackPlan skill = singleTargetSkillPlan(entry, agent, target);
+        if (skill == null) {
             ACTIONS.navigate(entry, target.getPosition(), true);
             return;
         }
-        if (preserveOutsidePond && conservativeMaximumDamage(agent, basic) >= target.getHp()) {
+        if (preserveOutsidePond && conservativeMaximumDamage(agent, skill) >= target.getHp()) {
             ACTIONS.stop(entry);
             member.deferUntil(nowMs + ACTION_RETRY_MS);
             return;
         }
-        AgentAttackTransactionResult attack = AgentCombatAttackRuntime.attackMonster(entry, agent, basic);
+        AgentAttackTransactionResult attack = AgentCombatAttackRuntime.attackMonster(entry, agent, skill);
         if (!attack.committed()) return;
         if (preserveOutsidePond) member.tagStageTwoObject(target.getObjectId(), nowMs);
         member.deferUntil(nowMs + ACTION_RETRY_MS);
+    }
+
+    private static AgentAttackPlan singleTargetSkillPlan(
+            AgentRuntimeEntry entry, Character agent, Monster target) {
+        AgentAttackPlan planned = AgentCombatPlanRuntime.planSkillAttackOnly(
+                entry, agent, target, AgentCombatConfig.cfg);
+        if (planned == null || planned.skillId <= 0 || planned.primaryTarget() != target) return null;
+        return new AgentAttackPlan(planned.skillId, planned.skillLevel, planned.numDamage,
+                planned.hitBox, List.of(target), planned.route, planned.display, planned.direction,
+                planned.rangedDirection, planned.stance, planned.speed, planned.hitDelayMs,
+                planned.cooldownMs, planned.damageWeaponType);
     }
 
     private static Point stageTwoLurePoint(Character agent, Point monster, Point pond) {
