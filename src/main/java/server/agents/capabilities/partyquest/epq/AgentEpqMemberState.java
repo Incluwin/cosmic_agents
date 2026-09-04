@@ -11,6 +11,7 @@ public final class AgentEpqMemberState {
     private long nextActionAtMs;
     private int committedObjectId;
     private int stageTwoTaggedObjectId;
+    private boolean stageTwoReturningToTree;
     private final Set<String> announcements = new HashSet<>();
 
     AgentEpqMemberState(int characterId, MemberType memberType) {
@@ -33,6 +34,9 @@ public final class AgentEpqMemberState {
     public void clearStageTwoTag() {
         stageTwoTaggedObjectId = 0;
     }
+    public boolean stageTwoReturningToTree() { return stageTwoReturningToTree; }
+    public void beginStageTwoTreeReturn() { stageTwoReturningToTree = true; }
+    public void finishStageTwoTreeReturn() { stageTwoReturningToTree = false; }
     public boolean claimAnnouncement(String key) {
         return key != null && !key.isBlank() && announcements.add(key);
     }

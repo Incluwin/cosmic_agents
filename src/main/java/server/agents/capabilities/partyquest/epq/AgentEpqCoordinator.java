@@ -44,7 +44,6 @@ public final class AgentEpqCoordinator {
             "server.agents.capabilities.partyquest.epq.AgentEpqCoordinator.EVENT_TIMEOUT_MS");
     private static final long BOSS_LOOT_SETTLE_MS = config.AgentTuning.longValue(
             "server.agents.capabilities.partyquest.epq.AgentEpqCoordinator.BOSS_LOOT_SETTLE_MS");
-    private static final long ITEM_REACTOR_SETTLE_MS = 5_500L;
     private static final long LOBBY_ENTRY_DELAY_MS = 5_000L;
     private static final long LOBBY_CHAT_STAGGER_MS = 650L;
     private static final int ITEM_REACTOR_DROP_RADIUS = 40;
@@ -169,17 +168,24 @@ public final class AgentEpqCoordinator {
             enterPortal(entry, agent, 3, member, nowMs);
             return;
         }
-        if (carrier && ACTIONS.itemCount(agent, AgentEpqDefinition.PURIFIED_POISON) > 0
-                && spine != null) {
-            dropAt(session, entry, agent, InventoryType.ETC, AgentEpqDefinition.PURIFIED_POISON,
-                    spine.getPosition(), member, nowMs);
-            return;
-        }
         Reactor pond = agent.getMap().getReactorById(AgentEpqDefinition.POND_REACTOR);
         if (pond == null) { ACTIONS.stop(entry); return; }
-        if (carrier && collectNearest(entry, agent,
-                Set.of(AgentEpqDefinition.PURIFIED_POISON))) return;
-
+        if (carrier && ACTIONS.itemCount(agent, AgentEpqDefinition.PURIFIED_POISON) > 0
+                && spine != null) {
+            if (dropAt(session, entry, agent, InventoryType.ETC,
+                    AgentEpqDefinition.PURIFIED_POISON, spine.getPosition(), member, nowMs)) {
+                member.beginStageTwoTreeReturn();
+            }
+            return;
+        }
+        if (carrier && member.stageTwoReturningToTree()) {
+            Point rally = stageTwoRallyPoint(session, agent, pond.getPosition());
+            if (!near(agent.getPosition(), rally, 45)) {
+                ACTIONS.navigate(entry, rally, true);
+                return;
+            }
+            member.finishStageTwoTreeReturn();
+        }
         List<Monster> bugs = AgentMapPerception.monsters(agent.getMap()).stream()
                 .filter(Monster::isAlive)
                 .filter(mob -> mob.getId() == AgentEpqDefinition.STAGE_TWO_MOB)
@@ -210,6 +216,8 @@ public final class AgentEpqCoordinator {
             attackTarget(entry, agent, atPond, member, nowMs, false);
             return;
         }
+        if (carrier && collectNearest(entry, agent,
+                Set.of(AgentEpqDefinition.PURIFIED_POISON))) return;
         if (lureSide < 0) {
             Point rally = stageTwoRallyPoint(session, agent, pond.getPosition());
             if (!near(agent.getPosition(), rally, 45)) ACTIONS.navigate(entry, rally, true);
@@ -477,9 +485,11 @@ public final class AgentEpqCoordinator {
     }
 
     private static List<Integer> stageTwoLurerIds(AgentEpqSession session) {
+        int carrierId = workAgentId(session);
         return session.members().stream()
                 .filter(member -> member.memberType() == AgentEpqMemberState.MemberType.AGENT)
                 .map(AgentEpqMemberState::characterId)
+                .filter(characterId -> characterId != carrierId)
                 .map(AgentEpqCoordinator::character)
                 .filter(java.util.Objects::nonNull)
                 .sorted(Comparator.comparingInt(candidate ->
@@ -675,22 +685,25 @@ public final class AgentEpqCoordinator {
         return EPQ.runNpc(agent, npcId, selections);
     }
 
-    private static void dropAt(AgentEpqSession session, AgentRuntimeEntry entry, Character agent,
-                               InventoryType type, int itemId,
-                               Point target, AgentEpqMemberState member, long nowMs) {
+    private static boolean dropAt(AgentEpqSession session, AgentRuntimeEntry entry, Character agent,
+                                  InventoryType type, int itemId,
+                                  Point target, AgentEpqMemberState member, long nowMs) {
         Point position = agent.getPosition();
         Point levelTarget = new Point(target.x, position == null ? target.y : position.y);
         Point ground = ACTIONS.groundPoint(agent.getMap(), levelTarget);
         Point approach = ground == null ? levelTarget : ground;
         if (!near(position, approach, ITEM_REACTOR_DROP_RADIUS)) {
             ACTIONS.navigate(entry, approach, true);
-            return;
+            return false;
         }
         ACTIONS.stop(entry);
         if (dropItem(entry, agent, type, itemId, (short) 1)) {
-            long settleUntil = nowMs + ITEM_REACTOR_SETTLE_MS;
-            session.members().forEach(state -> state.deferUntil(settleUntil));
+            // The map schedules item-reactor consumption itself. Only throttle the
+            // carrier's transaction; lurers and tree defenders must keep working.
+            member.deferUntil(nowMs + ACTION_RETRY_MS);
+            return true;
         }
+        return false;
     }
 
     private static void dropStackNearNpc(
@@ -722,9 +735,12 @@ public final class AgentEpqCoordinator {
             AgentRuntimeEntry entry, Character agent, InventoryType type, int itemId, short quantity) {
         var inventory = agent == null ? null : agent.getInventory(type);
         Item item = inventory == null ? null : inventory.findById(itemId);
+        boolean epqOwned = agent != null && AgentEpqDefinition.EXCLUSIVE_ITEMS.contains(itemId)
+                && AgentEpqSessionRegistry.active(agent.getId())
+                && AgentEpqSessionRegistry.canLootExclusive(agent, itemId);
         if (item == null || item.getQuantity() <= 0
-                || !AgentInventoryReservationRuntime.mayConsume(
-                entry, item, System.currentTimeMillis())) return false;
+                || (!epqOwned && !AgentInventoryReservationRuntime.mayConsume(
+                entry, item, System.currentTimeMillis()))) return false;
         short dropQuantity = (short) Math.min(item.getQuantity(), Math.max(1, quantity));
         if (itemId == AgentEpqDefinition.POISON
                 && agent.getMapId() == AgentEpqDefinition.STAGE_TWO_MAP) {

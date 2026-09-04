@@ -89,6 +89,12 @@ class AgentEpqSessionTest {
         assertEquals(77, member.stageTwoTaggedObjectId());
         member.clearStageTwoTag();
         assertEquals(0, member.stageTwoTaggedObjectId());
+
+        assertFalse(member.stageTwoReturningToTree());
+        member.beginStageTwoTreeReturn();
+        assertTrue(member.stageTwoReturningToTree());
+        member.finishStageTwoTreeReturn();
+        assertFalse(member.stageTwoReturningToTree());
     }
 
     @Test
