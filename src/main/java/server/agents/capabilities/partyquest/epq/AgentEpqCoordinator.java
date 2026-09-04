@@ -10,6 +10,7 @@ import server.agents.capabilities.combat.AgentAttackTransactionResult;
 import server.agents.capabilities.combat.AgentCombatAttackRuntime;
 import server.agents.capabilities.combat.AgentCombatConfig;
 import server.agents.capabilities.combat.AgentCombatPlanRuntime;
+import server.agents.capabilities.combat.AgentCombatSkillConstraintState;
 import server.agents.integration.AgentCharacterGatewayRuntime;
 import server.agents.integration.AgentInventoryGatewayRuntime;
 import server.agents.integration.AgentPartyQuestGatewayRuntime;
@@ -44,7 +45,6 @@ public final class AgentEpqCoordinator {
             "server.agents.capabilities.partyquest.epq.AgentEpqCoordinator.BOSS_LOOT_SETTLE_MS");
     private static final long ITEM_REACTOR_SETTLE_MS = 5_500L;
     private static final long LOBBY_ENTRY_DELAY_MS = 5_000L;
-    private static final long STAGE_TWO_RETAG_MS = 3_500L;
     private static final int ITEM_REACTOR_DROP_RADIUS = 40;
     private static final int LOOT_RADIUS = 75;
     private static final int STAGE_TWO_LURE_STEP = 180;
@@ -89,6 +89,8 @@ public final class AgentEpqCoordinator {
         AgentEpqMemberState member = session.member(agent.getId());
         if (member == null || member.memberType() != AgentEpqMemberState.MemberType.AGENT
                 || nowMs < member.nextActionAtMs()) return;
+        entry.capabilityStates().require(AgentCombatSkillConstraintState.STATE_KEY)
+                .requireAttackSkill();
         if (session.eventInstance() != null && AgentEpqDefinition.isEventMap(agent.getMapId())
                 && agent.getEventInstance() != session.eventInstance()) {
             session.fail("EPQ member entered a different event instance", nowMs);
@@ -207,8 +209,7 @@ public final class AgentEpqCoordinator {
                 .findFirst()
                 .orElseGet(() -> stageTwoSideTarget(bugs, pond.getPosition(), lureSide));
         if (target == null) { ACTIONS.stop(entry); return; }
-        if (member.stageTwoTaggedObjectId() == target.getObjectId()
-                && nowMs - member.stageTwoTaggedAtMs() < STAGE_TWO_RETAG_MS) {
+        if (member.stageTwoTaggedObjectId() == target.getObjectId()) {
             Point lure = stageTwoLurePoint(agent, target.getPosition(), pond.getPosition());
             if (!near(agent.getPosition(), lure, 45)) ACTIONS.navigate(entry, lure, true);
             else ACTIONS.stop(entry);
@@ -431,7 +432,7 @@ public final class AgentEpqCoordinator {
         }
         AgentAttackTransactionResult attack = AgentCombatAttackRuntime.attackMonster(entry, agent, skill);
         if (!attack.committed()) return;
-        if (preserveOutsidePond) member.tagStageTwoObject(target.getObjectId(), nowMs);
+        if (preserveOutsidePond) member.tagStageTwoObject(target.getObjectId());
         member.deferUntil(nowMs + ACTION_RETRY_MS);
     }
 

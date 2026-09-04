@@ -30,8 +30,8 @@ public final class AgentCombatPlanRuntime {
             // A wand swing is the emergency fallback for a magician, not a competing damage plan. Allowing
             // it into the score alongside a usable spell can select an invisible-looking basic hit at melee
             // range instead of broadcasting the magic-skill packet.
-            if (sealed || (!hasUsableMagicSkill(candidates)
-                    && !hasLearnedMagicSkill(bot, attackSkillIds))) {
+            if (!attackSkillRequired(entry) && (sealed || (!hasUsableMagicSkill(candidates)
+                    && !hasLearnedMagicSkill(bot, attackSkillIds)))) {
                 AgentAttackPlan basicAttack = AgentBasicAttackPlanRuntime.planBasicAttack(bot, target);
                 basicAttack = AgentCombatObjectiveTargetStateRuntime.restrictAttackPlan(entry, basicAttack);
                 if (basicAttack != null) {
@@ -44,6 +44,11 @@ public final class AgentCombatPlanRuntime {
         } finally {
             AgentPerformanceMonitor.record("combat-plan", System.nanoTime() - startedAt);
         }
+    }
+
+    private static boolean attackSkillRequired(AgentRuntimeEntry entry) {
+        return entry.capabilityStates().require(
+                AgentCombatSkillConstraintState.STATE_KEY).attackSkillRequired();
     }
 
     /** Plans an attack skill without allowing the normal basic-attack fallback. */

@@ -2,6 +2,7 @@ package server.agents.capabilities.partyquest.epq;
 
 import client.Character;
 import scripting.event.EventInstanceManager;
+import server.agents.capabilities.combat.AgentCombatSkillConstraintState;
 import server.agents.capabilities.partyquest.AgentPartyQuestLifecycleRuntime;
 import server.agents.integration.AgentPartyGatewayRuntime;
 import server.agents.integration.AgentPrimitiveCapabilityGatewayRuntime;
@@ -18,7 +19,10 @@ final class AgentEpqTerminationService {
         if (session == null || !session.beginTermination()) return;
         session.members().forEach(member -> {
             AgentRuntimeEntry entry = AgentRuntimeRegistry.findByAgentCharacterId(member.characterId());
-            if (entry != null) AgentPrimitiveCapabilityGatewayRuntime.gateway().stop(entry);
+            if (entry != null) {
+                entry.capabilityStates().require(AgentCombatSkillConstraintState.STATE_KEY).clear();
+                AgentPrimitiveCapabilityGatewayRuntime.gateway().stop(entry);
+            }
         });
         EventInstanceManager event = session.eventInstance();
         if (dispose && event != null) {

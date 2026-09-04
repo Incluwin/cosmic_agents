@@ -11,7 +11,6 @@ public final class AgentEpqMemberState {
     private long nextActionAtMs;
     private int committedObjectId;
     private int stageTwoTaggedObjectId;
-    private long stageTwoTaggedAtMs;
     private final Set<String> announcements = new HashSet<>();
 
     AgentEpqMemberState(int characterId, MemberType memberType) {
@@ -28,14 +27,11 @@ public final class AgentEpqMemberState {
     public void commitObject(int value) { committedObjectId = Math.max(0, value); }
     public void clearObject() { committedObjectId = 0; }
     public int stageTwoTaggedObjectId() { return stageTwoTaggedObjectId; }
-    public long stageTwoTaggedAtMs() { return stageTwoTaggedAtMs; }
-    public void tagStageTwoObject(int objectId, long nowMs) {
+    public void tagStageTwoObject(int objectId) {
         stageTwoTaggedObjectId = Math.max(0, objectId);
-        stageTwoTaggedAtMs = Math.max(0L, nowMs);
     }
     public void clearStageTwoTag() {
         stageTwoTaggedObjectId = 0;
-        stageTwoTaggedAtMs = 0L;
     }
     public boolean claimAnnouncement(String key) {
         return key != null && !key.isBlank() && announcements.add(key);

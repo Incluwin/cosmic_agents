@@ -86,12 +86,10 @@ class AgentEpqSessionTest {
         assertFalse(session.claimAnnouncement("stage-progress"));
 
         AgentEpqMemberState member = session.member(1);
-        member.tagStageTwoObject(77, 500L);
+        member.tagStageTwoObject(77);
         assertEquals(77, member.stageTwoTaggedObjectId());
-        assertEquals(500L, member.stageTwoTaggedAtMs());
         member.clearStageTwoTag();
         assertEquals(0, member.stageTwoTaggedObjectId());
-        assertEquals(0L, member.stageTwoTaggedAtMs());
     }
 
     private static AgentEpqSession session(int memberCount) {

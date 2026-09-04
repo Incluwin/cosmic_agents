@@ -9,8 +9,14 @@ public final class AgentCombatSkillConstraintState {
                     AgentCombatSkillConstraintState.class, AgentCombatSkillConstraintState::new);
 
     private int requiredSkillId;
+    private boolean attackSkillRequired;
 
     public synchronized int requiredSkillId() { return requiredSkillId; }
+    public synchronized boolean attackSkillRequired() { return attackSkillRequired; }
     public synchronized void require(int skillId) { requiredSkillId = Math.max(0, skillId); }
-    public synchronized void clear() { requiredSkillId = 0; }
+    public synchronized void requireAttackSkill() { attackSkillRequired = true; }
+    public synchronized void clear() {
+        requiredSkillId = 0;
+        attackSkillRequired = false;
+    }
 }
