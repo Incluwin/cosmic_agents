@@ -50,6 +50,8 @@ public final class AgentEpqCoordinator {
     private static final int LOOT_RADIUS = 75;
     private static final int STAGE_TWO_BOTTLES_REQUIRED = 4;
     private static final long STAGE_TWO_AGGRO_TIMEOUT_MS = 45_000L;
+    private static final long STAGE_TWO_LURE_STALL_MS = 6_000L;
+    private static final int STAGE_TWO_LURE_PROGRESS_PX = 16;
     private static final int PORTAL_RADIUS = config.AgentTuning.intValue(
             "server.agents.capabilities.partyquest.epq.AgentEpqCoordinator.PORTAL_RADIUS");
     private static final int NPC_RADIUS = config.AgentTuning.intValue(
@@ -201,6 +203,15 @@ public final class AgentEpqCoordinator {
                 .findFirst().orElse(null);
         if (lureSide >= 0 && tagged != null
                 && (tagged.getPosition() == null || !pond.getArea().contains(tagged.getPosition()))) {
+            if (tagged.getPosition() != null) {
+                member.observeStageTwoLureProgress(
+                        Math.abs(tagged.getPosition().x - pond.getPosition().x), nowMs,
+                        STAGE_TWO_LURE_PROGRESS_PX);
+            }
+            if (member.stageTwoLureStalled(nowMs, STAGE_TWO_LURE_STALL_MS)) {
+                attackTarget(entry, agent, tagged, member, nowMs, true, pond.getPosition());
+                return;
+            }
             Point lure = stageTwoRallyPoint(session, agent, pond.getPosition());
             if (!near(agent.getPosition(), lure, 45)) ACTIONS.navigate(entry, lure, true);
             else ACTIONS.stop(entry);
@@ -244,7 +255,7 @@ public final class AgentEpqCoordinator {
             else ACTIONS.stop(entry);
             return;
         }
-        attackTarget(entry, agent, target, member, nowMs, true);
+        attackTarget(entry, agent, target, member, nowMs, true, pond.getPosition());
     }
 
     private static void stageThree(AgentRuntimeEntry entry, Character agent,
@@ -449,6 +460,12 @@ public final class AgentEpqCoordinator {
     private static void attackTarget(AgentRuntimeEntry entry, Character agent, Monster target,
                                      AgentEpqMemberState member, long nowMs,
                                      boolean preserveOutsidePond) {
+        attackTarget(entry, agent, target, member, nowMs, preserveOutsidePond, null);
+    }
+
+    private static void attackTarget(AgentRuntimeEntry entry, Character agent, Monster target,
+                                     AgentEpqMemberState member, long nowMs,
+                                     boolean preserveOutsidePond, Point pond) {
         AgentAttackPlan skill = singleTargetSkillPlan(entry, agent, target);
         if (skill == null) {
             ACTIONS.navigate(entry, target.getPosition(), true);
@@ -463,7 +480,10 @@ public final class AgentEpqCoordinator {
         if (!attack.committed()) return;
         if (preserveOutsidePond && attack.hitLines() > 0) {
             target.setAgentPhysicsAggroTimeoutOverrideMs(STAGE_TWO_AGGRO_TIMEOUT_MS);
-            member.tagStageTwoObject(target.getObjectId());
+            int treeDistance = pond == null || target.getPosition() == null
+                    ? Integer.MAX_VALUE
+                    : Math.abs(target.getPosition().x - pond.x);
+            member.tagStageTwoObject(target.getObjectId(), treeDistance, nowMs);
         }
         member.deferUntil(nowMs + ACTION_RETRY_MS);
     }

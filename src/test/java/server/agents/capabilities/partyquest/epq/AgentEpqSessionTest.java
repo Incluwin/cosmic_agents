@@ -98,6 +98,22 @@ class AgentEpqSessionTest {
     }
 
     @Test
+    void stalledStageTwoLureOnlyRecoversAfterNoTreewardProgress() {
+        AgentEpqMemberState member = session(5).member(1);
+        member.tagStageTwoObject(77, 800, 1_000L);
+
+        assertFalse(member.stageTwoLureStalled(6_999L, 6_000L));
+        member.observeStageTwoLureProgress(760, 5_000L, 16);
+        assertFalse(member.stageTwoLureStalled(10_999L, 6_000L));
+        assertTrue(member.stageTwoLureStalled(11_000L, 6_000L));
+
+        member.tagStageTwoObject(77, 760, 11_000L);
+        assertFalse(member.stageTwoLureStalled(11_001L, 6_000L));
+        member.clearStageTwoTag();
+        assertFalse(member.stageTwoLureStalled(99_000L, 6_000L));
+    }
+
+    @Test
     void lobbyAgentsChatInOrderDuringLeaderCountdown() {
         AgentEpqSession session = session(5);
 

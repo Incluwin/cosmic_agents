@@ -11,6 +11,8 @@ public final class AgentEpqMemberState {
     private long nextActionAtMs;
     private int committedObjectId;
     private int stageTwoTaggedObjectId;
+    private int stageTwoBestTreeDistance = Integer.MAX_VALUE;
+    private long stageTwoLastLureProgressAtMs;
     private boolean stageTwoReturningToTree;
     private final Set<String> announcements = new HashSet<>();
 
@@ -31,8 +33,26 @@ public final class AgentEpqMemberState {
     public void tagStageTwoObject(int objectId) {
         stageTwoTaggedObjectId = Math.max(0, objectId);
     }
+    public void tagStageTwoObject(int objectId, int treeDistance, long nowMs) {
+        stageTwoTaggedObjectId = Math.max(0, objectId);
+        stageTwoBestTreeDistance = Math.max(0, treeDistance);
+        stageTwoLastLureProgressAtMs = Math.max(0L, nowMs);
+    }
+    public void observeStageTwoLureProgress(int treeDistance, long nowMs, int threshold) {
+        int distance = Math.max(0, treeDistance);
+        if (distance + Math.max(1, threshold) < stageTwoBestTreeDistance) {
+            stageTwoBestTreeDistance = distance;
+            stageTwoLastLureProgressAtMs = Math.max(0L, nowMs);
+        }
+    }
+    public boolean stageTwoLureStalled(long nowMs, long timeoutMs) {
+        return stageTwoTaggedObjectId > 0 && stageTwoLastLureProgressAtMs > 0L
+                && nowMs - stageTwoLastLureProgressAtMs >= Math.max(1L, timeoutMs);
+    }
     public void clearStageTwoTag() {
         stageTwoTaggedObjectId = 0;
+        stageTwoBestTreeDistance = Integer.MAX_VALUE;
+        stageTwoLastLureProgressAtMs = 0L;
     }
     public boolean stageTwoReturningToTree() { return stageTwoReturningToTree; }
     public void beginStageTwoTreeReturn() { stageTwoReturningToTree = true; }
