@@ -47,8 +47,21 @@ public final class AgentEpqSessionRegistry {
     public static boolean canLootExclusive(Character character, int itemId) {
         if (character == null || !AgentEpqDefinition.EXCLUSIVE_ITEMS.contains(itemId)) return false;
         AgentEpqSession session = forMember(character.getId());
-        return session != null && session.eventInstance() != null
-                && character.getEventInstance() == session.eventInstance()
-                && AgentEpqDefinition.isEventMap(character.getMapId());
+        if (session == null || session.eventInstance() == null
+                || character.getEventInstance() != session.eventInstance()
+                || !AgentEpqDefinition.isEventMap(character.getMapId())) return false;
+
+        if (itemId == AgentEpqDefinition.MONSTER_MARBLE
+                && character.getMapId() == AgentEpqDefinition.STAGE_FOUR_MAP) {
+            return character.getId() == session.eventLeaderId();
+        }
+        if (itemId == AgentEpqDefinition.MAGIC_STONE) {
+            if (character.getMapId() == AgentEpqDefinition.BOSS_MAP) return false;
+            if (character.getMapId() == AgentEpqDefinition.STAGE_FIVE_MAP) {
+                return !session.stageFiveStoneHandedOff()
+                        && character.getId() == session.workAgentId();
+            }
+        }
+        return true;
     }
 }

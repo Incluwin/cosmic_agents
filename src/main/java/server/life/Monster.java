@@ -458,7 +458,9 @@ public class Monster extends AbstractLoadedLife {
             */
 
             if (damage > 0) {
-                this.applyDamage(attacker, damage, stayAlive, false);
+                this.applyDamage(attacker, damage,
+                        stayAlive || EpqPoisonFlowerCaptureService.preserveForAgentCapture(attacker, this)
+                                || EpqPoisonFlowerCaptureService.preserveForAgentLure(attacker, this), false);
                 if (!this.isAlive()) {  // monster just died
                     lastHit = true;
                 }

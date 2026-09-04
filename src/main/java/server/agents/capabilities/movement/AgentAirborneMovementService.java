@@ -4,6 +4,7 @@ import client.Character;
 import server.agents.capabilities.navigation.AgentNavigationGraph;
 import server.agents.capabilities.movement.AgentMovementStateRuntime;
 import server.agents.capabilities.navigation.AgentNavigationDebugStateRuntime;
+import server.agents.capabilities.partyquest.epq.AgentEpqSessionRegistry;
 import server.agents.integration.AgentRuntimeIdentityRuntime;
 import server.agents.monitoring.AgentPerformanceMonitor;
 import server.agents.runtime.AgentRuntimeEntry;
@@ -22,6 +23,14 @@ public final class AgentAirborneMovementService {
             AgentMotionTimerService.tickMotionTimers(entry);
 
             Character agent = AgentRuntimeIdentityRuntime.bot(entry);
+            // EPQ NPC scripts warp the whole event team synchronously. An Agent
+            // can therefore finish the current movement slice after Character.map
+            // has changed but before the next live-tick map-transition gate has
+            // rebuilt its footholds and reset its pose. Never apply the old map's
+            // airborne coordinates to the new EPQ field during that brief window.
+            if (awaitingEpqMapTransition(entry, agent)) {
+                return;
+            }
             Point agentPosition = agent.getPosition();
 
             if (successfullyGrabbedRope(entry, agent, agentPosition)) {
@@ -64,6 +73,12 @@ public final class AgentAirborneMovementService {
         } finally {
             AgentPerformanceMonitor.record("move-air", System.nanoTime() - startedAt);
         }
+    }
+
+    static boolean awaitingEpqMapTransition(AgentRuntimeEntry entry, Character agent) {
+        return entry != null && agent != null
+                && AgentEpqSessionRegistry.forMember(agent.getId()) != null
+                && !AgentMapStateRuntime.isTrackingMap(entry, agent.getMapId());
     }
 
     private static void broadcastAirborneStep(AgentRuntimeEntry entry,

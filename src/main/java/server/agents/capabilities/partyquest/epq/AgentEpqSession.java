@@ -34,6 +34,8 @@ public final class AgentEpqSession {
     private boolean paused;
     private boolean terminating;
     private boolean rewardHit;
+    private boolean stageTwoBottlesSecured;
+    private boolean stageFiveStoneHandedOff;
     private long bossClearedAtMs;
     private long progressSignature = Long.MIN_VALUE;
     private String failure = "";
@@ -109,6 +111,29 @@ public final class AgentEpqSession {
     public synchronized int memberCount() { return members.size(); }
     public synchronized boolean rewardHit() { return rewardHit; }
     public synchronized void markRewardHit(long nowMs) { rewardHit = true; markProgress(nowMs); }
+    public synchronized boolean stageTwoBottlesSecured() { return stageTwoBottlesSecured; }
+    public synchronized void secureStageTwoBottles(long nowMs) {
+        if (!stageTwoBottlesSecured) {
+            stageTwoBottlesSecured = true;
+            markProgress(nowMs);
+        }
+    }
+    public synchronized int workAgentId() {
+        AgentEpqMemberState leader = members.get(eventLeaderId);
+        if (leader != null && leader.memberType() == AgentEpqMemberState.MemberType.AGENT) {
+            return leader.characterId();
+        }
+        return members.values().stream()
+                .filter(member -> member.memberType() == AgentEpqMemberState.MemberType.AGENT)
+                .mapToInt(AgentEpqMemberState::characterId).min().orElse(executionAgentId);
+    }
+    public synchronized boolean stageFiveStoneHandedOff() { return stageFiveStoneHandedOff; }
+    public synchronized void markStageFiveStoneHandedOff(long nowMs) {
+        if (!stageFiveStoneHandedOff) {
+            stageFiveStoneHandedOff = true;
+            markProgress(nowMs);
+        }
+    }
     public synchronized long observeBossCleared(long nowMs) {
         if (bossClearedAtMs == 0L) { bossClearedAtMs = nowMs; markProgress(nowMs); }
         return bossClearedAtMs;

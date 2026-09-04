@@ -1,12 +1,16 @@
 package server.agents.capabilities.partyquest.epq;
 
+import client.Character;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import scripting.event.EventInstanceManager;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class AgentEpqSessionTest {
     private AgentEpqSession registered;
@@ -45,6 +49,44 @@ class AgentEpqSessionTest {
     }
 
     @Test
+    void stageTwoCompletionStaysLatchedAcrossItemReactorConsumption() {
+        AgentEpqSession session = session(5);
+
+        assertFalse(session.stageTwoBottlesSecured());
+        session.secureStageTwoBottles(25L);
+        assertTrue(session.stageTwoBottlesSecured());
+        session.secureStageTwoBottles(30L);
+        assertTrue(session.stageTwoBottlesSecured());
+        assertEquals(25L, session.lastProgressAtMs());
+    }
+
+    @Test
+    void stageFiveHumanHandoffStaysLatched() {
+        AgentEpqSession session = session(5);
+
+        assertFalse(session.stageFiveStoneHandedOff());
+        session.markStageFiveStoneHandedOff(25L);
+        assertTrue(session.stageFiveStoneHandedOff());
+        session.markStageFiveStoneHandedOff(30L);
+        assertEquals(25L, session.lastProgressAtMs());
+    }
+
+    @Test
+    void workAgentIsAgentLeaderOrFirstAgentForHumanLeader() {
+        assertEquals(1, session(5).workAgentId());
+
+        AgentEpqSession mixed = new AgentEpqSession(
+                AgentEpqSession.Mode.HUMAN_ASSISTED, 7L, 10, 10L);
+        mixed.addMember(10, AgentEpqMemberState.MemberType.HUMAN);
+        mixed.addMember(13, AgentEpqMemberState.MemberType.AGENT);
+        mixed.addMember(11, AgentEpqMemberState.MemberType.AGENT);
+        mixed.addMember(12, AgentEpqMemberState.MemberType.AGENT);
+        mixed.setLeadership(10, 13);
+
+        assertEquals(11, mixed.workAgentId());
+    }
+
+    @Test
     void progressSignaturesRefreshTheStageWatchdogOnlyWhenEvidenceChanges() {
         AgentEpqSession session = session(5);
         session.observeProgressSignature(100L, 20L);
@@ -76,6 +118,38 @@ class AgentEpqSessionTest {
         assertTrue(AgentEpqCoordinator.mayCollectStageFiveStone(mixed, 11));
         assertFalse(AgentEpqCoordinator.mayCollectStageFiveStone(mixed, 12));
         assertFalse(AgentEpqCoordinator.mayCollectStageFiveStone(mixed, 10));
+    }
+
+    @Test
+    void exclusiveGroundItemsHaveStageSpecificCollectors() {
+        registered = session(5);
+        EventInstanceManager event = mock(EventInstanceManager.class);
+        registered.bindEventInstance(event);
+        AgentEpqSessionRegistry.registerComplete(registered);
+        Character leader = member(1, event, AgentEpqDefinition.STAGE_FOUR_MAP);
+        Character follower = member(2, event, AgentEpqDefinition.STAGE_FOUR_MAP);
+
+        assertTrue(AgentEpqSessionRegistry.canLootExclusive(
+                leader, AgentEpqDefinition.MONSTER_MARBLE));
+        assertFalse(AgentEpqSessionRegistry.canLootExclusive(
+                follower, AgentEpqDefinition.MONSTER_MARBLE));
+
+        when(leader.getMapId()).thenReturn(AgentEpqDefinition.STAGE_FIVE_MAP);
+        when(follower.getMapId()).thenReturn(AgentEpqDefinition.STAGE_FIVE_MAP);
+        assertTrue(AgentEpqSessionRegistry.canLootExclusive(
+                leader, AgentEpqDefinition.MAGIC_STONE));
+        assertFalse(AgentEpqSessionRegistry.canLootExclusive(
+                follower, AgentEpqDefinition.MAGIC_STONE));
+        registered.markStageFiveStoneHandedOff(25L);
+        assertFalse(AgentEpqSessionRegistry.canLootExclusive(
+                leader, AgentEpqDefinition.MAGIC_STONE));
+
+        when(leader.getMapId()).thenReturn(AgentEpqDefinition.BOSS_MAP);
+        when(follower.getMapId()).thenReturn(AgentEpqDefinition.BOSS_MAP);
+        assertFalse(AgentEpqSessionRegistry.canLootExclusive(
+                leader, AgentEpqDefinition.MAGIC_STONE));
+        assertFalse(AgentEpqSessionRegistry.canLootExclusive(
+                follower, AgentEpqDefinition.MAGIC_STONE));
     }
 
     @Test
@@ -131,5 +205,13 @@ class AgentEpqSessionTest {
         }
         if (memberCount > 0) session.setLeadership(1, 1);
         return session;
+    }
+
+    private static Character member(int id, EventInstanceManager event, int mapId) {
+        Character character = mock(Character.class);
+        when(character.getId()).thenReturn(id);
+        when(character.getEventInstance()).thenReturn(event);
+        when(character.getMapId()).thenReturn(mapId);
+        return character;
     }
 }

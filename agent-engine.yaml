@@ -1001,14 +1001,14 @@ tuning:
     # Purpose: Bounds ownership if the EPQ event script or roster becomes stuck without completing.
     # Technical: Measured from EPQ session admission and released only through EPQ's idempotent termination path.
     server.agents.capabilities.partyquest.epq.AgentEpqCoordinator.EVENT_TIMEOUT_MS: '1800000'
-    # Values: 80-220 map pixels. Recommended: 160 for the Ellin Forest coordinator and entry NPC platforms.
+    # Values: 60-120 map pixels. Recommended: 80 so multi-level EPQ maps require reaching the NPC's actual platform.
     # Purpose: Requires an EPQ Agent to approach an NPC visibly before running the authored dialogue.
     # Technical: Compared as squared map-space distance; it does not alter NPC scripts, portal range, or another activity.
-    server.agents.capabilities.partyquest.epq.AgentEpqCoordinator.NPC_RADIUS: '160'
-    # Values: 50-140 map pixels. Recommended: 90 for the authored EPQ maze and stage transition portals.
+    server.agents.capabilities.partyquest.epq.AgentEpqCoordinator.NPC_RADIUS: '80'
+    # Values: 30-90 map pixels. Recommended: 45 so Agents visibly enter the authored EPQ maze portals.
     # Purpose: Requires an EPQ Agent to stand at the portal before executing its existing portal script.
     # Technical: Applies only inside AgentEpqCoordinator and leaves Cosmic portal validation authoritative.
-    server.agents.capabilities.partyquest.epq.AgentEpqCoordinator.PORTAL_RADIUS: '90'
+    server.agents.capabilities.partyquest.epq.AgentEpqCoordinator.PORTAL_RADIUS: '45'
     # Values: 70-200 map pixels. Recommended: 140 for Ellin Forest boxes and the reward reactor.
     # Purpose: Requires an EPQ Agent to approach a reactor before broadcasting and applying a normal weapon hit.
     # Technical: Does not change reactor state directly; the authored reactor receives the ordinary hit path.
