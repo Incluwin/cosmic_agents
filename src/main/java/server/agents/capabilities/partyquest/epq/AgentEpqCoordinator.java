@@ -48,6 +48,7 @@ public final class AgentEpqCoordinator {
     private static final long LOBBY_CHAT_STAGGER_MS = 650L;
     private static final int ITEM_REACTOR_DROP_RADIUS = 40;
     private static final int LOOT_RADIUS = 75;
+    private static final int STAGE_TWO_BOTTLES_REQUIRED = 4;
     private static final long STAGE_TWO_AGGRO_TIMEOUT_MS = 45_000L;
     private static final int PORTAL_RADIUS = config.AgentTuning.intValue(
             "server.agents.capabilities.partyquest.epq.AgentEpqCoordinator.PORTAL_RADIUS");
@@ -155,15 +156,18 @@ public final class AgentEpqCoordinator {
             return;
         }
         Reactor spine = agent.getMap().getReactorById(AgentEpqDefinition.SPINE_REACTOR);
-        if (carrier && spine != null && spine.getState() > 0 && spine.getState() < 4
+        if (carrier && spine != null && spine.getState() > 0
+                && spine.getState() < STAGE_TWO_BOTTLES_REQUIRED
                 && session.claimAnnouncement("stage2-progress-" + spine.getState())) {
-            AgentPartyGatewayRuntime.party().sendPartyChat(agent,
-                    "Diluted Poison applied: " + spine.getState() + "/4.");
+            sendVisiblePartyChat(agent, "Filled bottles applied: " + spine.getState()
+                    + "/" + STAGE_TWO_BOTTLES_REQUIRED + ".");
         }
-        if (spine != null && spine.getState() >= 4) {
-            if (carrier && session.claimAnnouncement("stage2-progress-4")) {
-                AgentPartyGatewayRuntime.party().sendPartyChat(agent,
-                        "Diluted Poison applied: 4/4. The thorns are open.");
+        if (spine != null && spine.getState() >= STAGE_TWO_BOTTLES_REQUIRED) {
+            if (carrier && session.claimAnnouncement(
+                    "stage2-progress-" + STAGE_TWO_BOTTLES_REQUIRED)) {
+                sendVisiblePartyChat(agent, "Filled bottles applied: "
+                        + STAGE_TWO_BOTTLES_REQUIRED + "/" + STAGE_TWO_BOTTLES_REQUIRED
+                        + ". The thorns are open.");
             }
             enterPortal(entry, agent, 3, member, nowMs);
             return;
