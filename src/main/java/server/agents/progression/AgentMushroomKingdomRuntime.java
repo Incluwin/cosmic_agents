@@ -97,6 +97,10 @@ public final class AgentMushroomKingdomRuntime {
         int metric = objectiveMetric(agent, node, gateway);
         state.observe(node.questId(), metric, gateway.mapId(agent), gateway.position(agent), nowMs);
         state.active(reason(node, metric));
+        if (state.recoveryMapId() > 0) {
+            continueCheckpointRoute(entry, agent, state, gateway, nowMs);
+            return true;
+        }
         if (node.questId() == 2326 && metric < node.requiredCount()) {
             AgentMushroomKingdomInvariantRecovery.Result rareItemRecovery =
                     AgentMushroomKingdomInvariantRecovery.recover(agent, state, gateway);
@@ -128,7 +132,7 @@ public final class AgentMushroomKingdomRuntime {
             AgentMushroomKingdomState state, PrimitiveCapabilityGateway gateway, long nowMs) {
         long elapsedMs = Math.max(0L, nowMs - state.objectiveProgressAtMs());
         AgentMushroomKingdomRecoveryPolicy.Action action =
-                AgentMushroomKingdomRecoveryPolicy.next(elapsedMs, node.hunting(),
+                AgentMushroomKingdomRecoveryPolicy.next(elapsedMs, node.hunting() || node.questId() == 2330,
                         state.recoveryStage(), state.checkpointRecoveries());
         if (action == AgentMushroomKingdomRecoveryPolicy.Action.NONE) return false;
         int stage = AgentMushroomKingdomRecoveryPolicy.stage(action);
@@ -146,23 +150,20 @@ public final class AgentMushroomKingdomRuntime {
             }
             case STAGE_LOCAL -> {
                 gateway.stop(entry);
-                stageAtObjectiveNpc(entry, agent, node, gateway);
                 gateway.refreshNavigation(entry, agent);
-                state.recoveryApplied(stage, "restaged at the local objective interaction");
-                state.active("restaging quest " + node.questId() + " after no durable progress");
+                reapproachObjectiveNpc(entry, agent, node, gateway);
+                state.recoveryApplied(stage, "replanned a normal route to the local objective interaction");
+                state.active("reapproaching quest " + node.questId()
+                        + " through normal navigation after no durable progress");
             }
             case RESET_CHECKPOINT -> {
                 gateway.stop(entry);
                 releaseHuntMap(agent, state);
                 if (node.questId() == 2330) AgentMushroomKingdomYetiPartyRuntime.leaveLobby(state);
                 int checkpoint = recoveryCheckpoint(agent, node, gateway);
-                if (!gateway.recoverToMap(entry, agent, checkpoint)) {
-                    return capabilityFailure(entry, state, gateway,
-                            "could not reset quest " + node.questId() + " to checkpoint " + checkpoint,
-                            nowMs);
-                }
-                state.recoveryApplied(stage, "reset to checkpoint map " + checkpoint);
-                state.active("resuming quest " + node.questId() + " from a clean checkpoint");
+                gateway.refreshNavigation(entry, agent);
+                state.beginCheckpointRoute(checkpoint, nowMs);
+                continueCheckpointRoute(entry, agent, state, gateway, nowMs);
             }
             case RECONCILE -> {
                 AgentMushroomKingdomInvariantRecovery.Result result =
@@ -187,15 +188,38 @@ public final class AgentMushroomKingdomRuntime {
         return true;
     }
 
-    private static void stageAtObjectiveNpc(AgentRuntimeEntry entry, Character agent,
-                                             AgentMushroomKingdomCatalog.QuestNode node,
-                                             PrimitiveCapabilityGateway gateway) {
+    private static void continueCheckpointRoute(AgentRuntimeEntry entry, Character agent,
+                                                AgentMushroomKingdomState state,
+                                                PrimitiveCapabilityGateway gateway, long nowMs) {
+        int checkpoint = state.recoveryMapId();
+        if (nowMs - state.recoveryStartedAtMs() >= 10 * 60_000L) {
+            state.clearCheckpointRoute();
+            block(entry, state, gateway, "checkpoint route to " + checkpoint
+                    + " did not arrive within ten minutes; no relocation used");
+            return;
+        }
+        boolean arrived = travel(entry, agent, checkpoint, state, gateway, nowMs);
+        if (state.phase() == AgentMushroomKingdomState.Phase.BLOCKED) {
+            state.clearCheckpointRoute();
+            return;
+        }
+        if (arrived) {
+            state.clearCheckpointRoute();
+            state.recoveryApplied(AgentMushroomKingdomRecoveryPolicy.CHECKPOINT_STAGE,
+                    "reached checkpoint map " + checkpoint + " through normal navigation");
+        }
+        state.active((arrived ? "reached" : "routing through")
+                + " checkpoint map " + checkpoint + " without relocation");
+    }
+
+    private static void reapproachObjectiveNpc(AgentRuntimeEntry entry, Character agent,
+                                               AgentMushroomKingdomCatalog.QuestNode node,
+                                               PrimitiveCapabilityGateway gateway) {
         int npcId = gateway.questStatus(agent, node.questId())
                 == QuestStatus.Status.NOT_STARTED.getId() ? node.startNpcId() : node.completeNpcId();
         Point npc = gateway.npcPosition(agent, npcId);
         if (npc == null) return;
-        Point grounded = gateway.groundPoint(agent.getMap(), npc);
-        gateway.stagePosition(entry, agent, grounded == null ? npc : grounded);
+        gateway.navigate(entry, npc, true);
     }
 
     private static int recoveryCheckpoint(Character agent,
@@ -214,8 +238,14 @@ public final class AgentMushroomKingdomRuntime {
 
     public static void cancel(AgentRuntimeEntry entry, Character agent) {
         AgentPrimitiveCapabilityGatewayRuntime.gateway().stop(entry);
-        releaseHuntMap(agent, entry.capabilityStates()
-                .require(AgentMushroomKingdomState.STATE_KEY));
+        AgentMushroomKingdomState state = entry.capabilityStates()
+                .require(AgentMushroomKingdomState.STATE_KEY);
+        releaseHuntMap(agent, state);
+        state.clearCheckpointRoute();
+        AgentMushroomKingdomYetiPartyRuntime.leaveLobby(state);
+        if (state.phase() == AgentMushroomKingdomState.Phase.ACTIVE) {
+            state.complete("Mushroom Kingdom plan cancelled");
+        }
     }
 
     private static boolean entryQuest(AgentRuntimeEntry entry, Character agent, int questId,
@@ -279,7 +309,11 @@ public final class AgentMushroomKingdomRuntime {
                     state, gateway, nowMs);
         }
         if (node.questId() == 2333 && gateway.itemCount(agent, 4001318) < 1) {
-            gateway.lootNearby(agent, Set.of(4001318));
+            if (gateway.prepareObjectiveLoot(entry, agent, Set.of(4001318))) {
+                gateway.grind(entry, Set.of());
+                state.active("walking into pickup range of the Royal Seal");
+                return true;
+            }
         }
         if (node.hunting() && objectiveMetric(agent, node, gateway) < node.requiredCount()) {
             if (node.itemId() > 0 && gateway.itemCount(agent, node.itemId()) == 0
@@ -294,7 +328,9 @@ public final class AgentMushroomKingdomRuntime {
             int huntMapId = selectedHuntMap(agent, node, state, gateway, nowMs);
             if (!travel(entry, agent, huntMapId, state, gateway, nowMs)) return true;
             maintainHuntMapReservation(agent, huntMapId, gateway.mapId(agent), nowMs);
-            if (node.itemId() > 0) gateway.lootNearby(agent, Set.of(node.itemId()));
+            if (node.itemId() > 0) {
+                gateway.prepareObjectiveLoot(entry, agent, Set.of(node.itemId()));
+            }
             if (!node.mobIds().isEmpty()) {
                 refreshMeleeAccuracySupply(agent, gateway);
                 Set<Integer> incidental = spawnPressureMobIds(agent, node.mobIds(), gateway);
@@ -517,6 +553,7 @@ public final class AgentMushroomKingdomRuntime {
                         && !requireCapacity(entry, agent, 4032388, 1,
                         "Wedding Hall key", state, gateway)) return false;
                 if (waitForYetiLoot(state, nowMs)) return true;
+                if (collectRelevantYetiBox(entry, agent, state, gateway)) return true;
                 if (!nearPortal(entry, agent, 1, gateway)) return true;
                 return enterExpectedPortal(entry, agent, 1,
                         AgentMushroomKingdomYetiPartyRuntime.LOBBY_MAP_ID,
@@ -540,9 +577,10 @@ public final class AgentMushroomKingdomRuntime {
             int spawnedVariant = spawnedYetiVariant(agent, gateway);
             if (spawnedVariant > 0
                     && gateway.questProgress(agent, 2330, spawnedVariant) >= 1) {
-                int unwantedRolls = state.recordUnwantedYetiRoll();
+                boolean newRoll = state.recordUnwantedYetiRoll();
+                int unwantedRolls = state.yetiUnwantedRolls();
                 int missingVariant = missingYetiVariant(agent, gateway);
-                if (unwantedRolls >= 3 && missingVariant > 0) {
+                if (newRoll && unwantedRolls >= 3 && missingVariant > 0) {
                     agent.requestAgentMushroomYetiPityVariant(missingVariant);
                     state.resetUnwantedYetiRolls();
                     state.active("requesting missing Yeti variant " + missingVariant
@@ -566,6 +604,7 @@ public final class AgentMushroomKingdomRuntime {
                 return true;
             }
             if (waitForYetiLoot(state, nowMs)) return true;
+            if (collectRelevantYetiBox(entry, agent, state, gateway)) return true;
             if (!nearPortal(entry, agent, 1, gateway)) return true;
             return enterExpectedPortal(entry, agent, 1,
                     AgentMushroomKingdomYetiPartyRuntime.LOBBY_MAP_ID,
@@ -581,7 +620,7 @@ public final class AgentMushroomKingdomRuntime {
             return true;
         }
         if (!nearPortal(entry, agent, 2, gateway)) {
-            stageStalledUnobservedPortalApproach(
+            replanStalledUnobservedPortalApproach(
                     entry, agent, 2, "King Pepe instance", state, gateway, nowMs);
             return true;
         }
@@ -611,6 +650,17 @@ public final class AgentMushroomKingdomRuntime {
         state.beginYetiLootGrace(nowMs);
         if (state.yetiLootGraceExpired(nowMs, YETI_LOOT_GRACE_MS)) return false;
         state.active("allowing King Pepe class-box priority before leaving the instance");
+        return true;
+    }
+
+    private static boolean collectRelevantYetiBox(
+            AgentRuntimeEntry entry, Character agent,
+            AgentMushroomKingdomState state, PrimitiveCapabilityGateway gateway) {
+        int weaponBox = AgentPepeEquipmentCatalog.weaponBoxItemId(agent.getJob().getId());
+        int mixedBox = AgentPepeEquipmentCatalog.mixedBoxItemId(agent.getJob().getId());
+        if (!gateway.prepareObjectiveLoot(entry, agent, Set.of(weaponBox, mixedBox))) return false;
+        gateway.grind(entry, Set.of());
+        state.active("walking into pickup range of the relevant King Pepe class box");
         return true;
     }
 
@@ -914,20 +964,20 @@ public final class AgentMushroomKingdomRuntime {
                                                      AgentMushroomKingdomState state,
                                                      PrimitiveCapabilityGateway gateway, long nowMs) {
         if (!nearPortal(entry, agent, portalId, gateway)) {
-            stageStalledUnobservedPortalApproach(
+            replanStalledUnobservedPortalApproach(
                     entry, agent, portalId, description, state, gateway, nowMs);
             return false;
         }
         int sourceMapId = gateway.mapId(agent);
         gateway.stop(entry);
         if (!gateway.enterPortal(agent, portalId)) {
-            recoverRejectedPortal(entry, agent, expectedMapId,
+            recoverRejectedPortal(entry, agent, portalId, expectedMapId,
                     description, state, gateway, nowMs);
             return false;
         }
         int observedMapId = gateway.mapId(agent);
         if (observedMapId != sourceMapId && observedMapId != expectedMapId) {
-            recoverRejectedPortal(entry, agent, expectedMapId,
+            recoverRejectedPortal(entry, agent, portalId, expectedMapId,
                     description + " reached unexpected map " + observedMapId,
                     state, gateway, nowMs);
             return false;
@@ -945,18 +995,27 @@ public final class AgentMushroomKingdomRuntime {
             state.capabilityProgress();
             return true;
         }
-        return recoverRejectedPortal(entry, agent, expectedMapId,
+        return recoverRejectedPortal(entry, agent, portalId, expectedMapId,
                 description, state, gateway, nowMs);
     }
 
     private static boolean recoverRejectedPortal(AgentRuntimeEntry entry, Character agent,
-                                                  int expectedMapId, String description,
+                                                  int portalId, int expectedMapId, String description,
                                                   AgentMushroomKingdomState state,
                                                   PrimitiveCapabilityGateway gateway, long nowMs) {
         int failures = state.capabilityFailure();
-        if (failures >= 3 && gateway.recoverToMap(entry, agent, expectedMapId)) {
-            state.capabilityProgress();
-            state.active("recovered " + description + " transition to map " + expectedMapId);
+        if (failures >= 8) {
+            block(entry, state, gateway, description
+                    + " rejected eight normal portal attempts; refusing to relocate the Agent");
+            return true;
+        }
+        if (failures >= 3) {
+            gateway.stop(entry);
+            gateway.refreshNavigation(entry, agent);
+            Point portal = gateway.portalPosition(agent, portalId);
+            if (portal != null) gateway.navigate(entry, portal, true);
+            state.active(description + " rejected entry; rebuilding the normal portal approach");
+            state.nextActionAtMs(nowMs + INTERACTION_RETRY_MS);
             return true;
         }
         state.active(description + " rejected entry; retrying");
@@ -964,20 +1023,17 @@ public final class AgentMushroomKingdomRuntime {
         return true;
     }
 
-    private static void stageStalledUnobservedPortalApproach(
+    private static void replanStalledUnobservedPortalApproach(
             AgentRuntimeEntry entry, Character agent, int portalId, String description,
             AgentMushroomKingdomState state, PrimitiveCapabilityGateway gateway, long nowMs) {
         if (gateway.observedByPlayer(agent)
                 || nowMs - state.progressAtMs() < UNOBSERVED_NPC_STAGING_DELAY_MS) return;
         Point portal = gateway.portalPosition(agent, portalId);
         if (portal == null) return;
-        Point groundedPortal = gateway.groundPoint(agent.getMap(), portal);
-        if (groundedPortal == null) groundedPortal = portal;
         gateway.stop(entry);
-        gateway.stagePosition(entry, agent, groundedPortal);
         gateway.refreshNavigation(entry, agent);
-        state.capabilityProgress();
-        state.active("recovering stalled " + description + " portal approach");
+        gateway.navigate(entry, portal, true);
+        state.active("replanning stalled " + description + " portal approach through normal movement");
     }
 
     private static boolean recoverBelowMap(AgentRuntimeEntry entry, Character agent,
@@ -990,15 +1046,8 @@ public final class AgentMushroomKingdomRuntime {
                 || position.y <= area.y + area.height + BELOW_MAP_RECOVERY_MARGIN_PX) {
             return false;
         }
-        Point portal = gateway.portalPosition(agent, 0);
-        if (portal == null) return false;
-        Point recovery = gateway.groundPoint(map, portal);
-        if (recovery == null) recovery = portal;
-        gateway.stop(entry);
-        gateway.stagePosition(entry, agent, recovery);
-        gateway.refreshNavigation(entry, agent);
-        state.capabilityProgress();
-        state.active("recovering from a fall below Mushroom Kingdom map " + gateway.mapId(agent));
+        block(entry, state, gateway, "Agent fell outside Mushroom Kingdom map "
+                + gateway.mapId(agent) + "; refusing to teleport it back into bounds");
         return true;
     }
 
@@ -1045,12 +1094,8 @@ public final class AgentMushroomKingdomRuntime {
                 entry, agent, npc, INTERACTION_DISTANCE_PX)) {
             if (!gateway.observedByPlayer(agent)
                     && nowMs - state.progressAtMs() >= UNOBSERVED_NPC_STAGING_DELAY_MS) {
-                Point groundedNpc = gateway.groundPoint(agent.getMap(), npc);
-                if (groundedNpc != null) {
-                    gateway.stagePosition(entry, agent, groundedNpc);
-                    state.capabilityProgress();
-                    return true;
-                }
+                gateway.stop(entry);
+                gateway.refreshNavigation(entry, agent);
             }
             gateway.navigate(entry, npc, true);
             return true;
@@ -1118,7 +1163,7 @@ public final class AgentMushroomKingdomRuntime {
         if (gateway.freeSlots(agent, itemId) >= slots) return true;
         for (int attempt = gateway.freeSlots(agent, itemId); attempt < slots; attempt++) {
             AgentMushroomKingdomInventoryRecovery.Result result =
-                    AgentMushroomKingdomInventoryRecovery.freeSlot(entry, agent, itemId, gateway);
+                    AgentMushroomKingdomInventoryRecovery.freeSlot(entry, agent, itemId, slots, gateway);
             if (!result.recovered()) {
                 block(entry, state, gateway, "need " + slots + " free " + description
                         + " inventory slot" + (slots == 1 ? "" : "s") + "; " + result.reason());
@@ -1171,6 +1216,10 @@ public final class AgentMushroomKingdomRuntime {
     private static int objectiveMetric(Character agent,
                                        AgentMushroomKingdomCatalog.QuestNode node,
                                        PrimitiveCapabilityGateway gateway) {
+        if (node.questId() == 2330) {
+            return gateway.questStatus(agent, 2330) * 4 + PEPE_KING_VARIANTS.stream()
+                    .mapToInt(mob -> Math.min(1, gateway.questProgress(agent, 2330, mob))).sum();
+        }
         if (node.itemId() > 0) return gateway.itemCount(agent, node.itemId());
         if (!node.mobIds().isEmpty()) {
             return node.mobIds().stream()

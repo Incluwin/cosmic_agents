@@ -17,6 +17,24 @@ import static org.mockito.Mockito.mock;
 class AgentSessionEventWiringRuntimeTest {
     private boolean previousTransportEnabled;
 
+    @Test
+    void productionDamageSubscriptionAdvancesTheMushroomBossWatchdog() {
+        AgentRuntimeEntry entry = new AgentRuntimeEntry(mock(Character.class), null, null);
+        var state = entry.capabilityStates().require(
+                server.agents.progression.AgentMushroomKingdomState.STATE_KEY);
+        state.begin(1L);
+        state.observe(2330, 4, 106021500, new java.awt.Point(), 2L);
+        AgentEventBus bus = AgentSessionEventRuntime.bus(entry);
+        try {
+            bus.publish(new server.agents.operations.events.AgentMobDamagedEvent(
+                    1, 500_000L, 106021500, 3300005, 10, 1, "mushroom-kingdom:2330"));
+            bus.drain(100);
+            assertEquals(500_000L, state.objectiveProgressAtMs());
+        } finally {
+            AgentSessionEventRuntime.close(entry);
+        }
+    }
+
     @BeforeEach
     void enableDialogueForExistingWiringExpectations() {
         previousTransportEnabled = config.AgentYamlConfig.config.agent.AGENT_DIALOGUE_TRANSPORT_ENABLED;
@@ -41,8 +59,8 @@ class AgentSessionEventWiringRuntimeTest {
                 ? 2 : 0;
         int behaviorListener = AgentBehaviorFeatureProfile.current().enabled() ? 1 : 0;
 
-        assertEquals(32 + personalityListeners + behaviorListener, bus.snapshot().subscriptions());
-        assertEquals(32 + personalityListeners + behaviorListener,
+        assertEquals(34 + personalityListeners + behaviorListener, bus.snapshot().subscriptions());
+        assertEquals(34 + personalityListeners + behaviorListener,
                 AgentSessionEventRuntime.bus(entry).snapshot().subscriptions());
 
         AgentSessionEventRuntime.close(entry);
@@ -64,7 +82,7 @@ class AgentSessionEventWiringRuntimeTest {
                 ? 2 : 0;
         int behaviorListener = AgentBehaviorFeatureProfile.current().enabled() ? 1 : 0;
 
-        assertEquals(19 + personalityListeners + behaviorListener, bus.snapshot().subscriptions());
+        assertEquals(21 + personalityListeners + behaviorListener, bus.snapshot().subscriptions());
 
         AgentSessionEventRuntime.close(entry);
     }
@@ -78,7 +96,7 @@ class AgentSessionEventWiringRuntimeTest {
                 ? 2 : 0;
         int behaviorListener = AgentBehaviorFeatureProfile.current().enabled() ? 1 : 0;
 
-        assertEquals(26 + personalityListeners + behaviorListener, bus.snapshot().subscriptions());
+        assertEquals(28 + personalityListeners + behaviorListener, bus.snapshot().subscriptions());
 
         AgentSessionEventRuntime.close(entry);
     }

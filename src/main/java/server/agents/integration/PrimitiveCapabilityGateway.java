@@ -222,6 +222,15 @@ public interface PrimitiveCapabilityGateway {
 
     boolean lootNearby(Character agent, Set<Integer> itemIds);
 
+    /**
+     * Commits the nearest eligible objective drop to the shared grind-loot path. The Agent
+     * still has to navigate into ordinary pickup range before the item can be collected.
+     */
+    default boolean prepareObjectiveLoot(AgentRuntimeEntry entry, Character agent,
+                                         Set<Integer> itemIds) {
+        return false;
+    }
+
     /** Picks one specific nearby drop; callers own approach and assignment policy. */
     default boolean lootItem(Character agent, int objectId, int maximumDistancePx) {
         return false;

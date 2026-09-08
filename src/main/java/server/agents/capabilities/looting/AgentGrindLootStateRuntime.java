@@ -49,7 +49,12 @@ public final class AgentGrindLootStateRuntime {
     }
 
     public static boolean isRetrySuppressed(AgentRuntimeEntry entry, MapItem loot, long nowMs) {
-        if (entry == null || loot == null || entry.grindLootState().ignoredObjectId() <= 0) {
+        if (entry == null || loot == null) return false;
+        if (entry.capabilityStates().find(AgentObjectiveLootApproachState.STATE_KEY)
+                .filter(state -> state.suppressed(
+                        server.agents.integration.AgentRuntimeIdentityRuntime.botMapId(entry),
+                        loot.getObjectId(), nowMs)).isPresent()) return true;
+        if (entry.grindLootState().ignoredObjectId() <= 0) {
             return false;
         }
         if (nowMs >= entry.grindLootState().ignoredUntilMs()) {

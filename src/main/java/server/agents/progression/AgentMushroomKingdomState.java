@@ -28,6 +28,9 @@ public final class AgentMushroomKingdomState implements AgentMushroomKingdomYeti
     private String lastRecovery = "";
     private int helmetPepeKills;
     private int yetiUnwantedRolls;
+    private boolean yetiRollCounted;
+    private int recoveryMapId;
+    private long recoveryStartedAtMs;
     private int huntMapQuestId;
     private int selectedHuntMapId;
     private int avoidedHuntMapQuestId;
@@ -54,6 +57,8 @@ public final class AgentMushroomKingdomState implements AgentMushroomKingdomYeti
         lastRecovery = "";
         helmetPepeKills = 0;
         yetiUnwantedRolls = 0;
+        yetiRollCounted = false;
+        clearCheckpointRoute();
         huntMapQuestId = 0;
         selectedHuntMapId = 0;
         avoidedHuntMapQuestId = 0;
@@ -81,6 +86,7 @@ public final class AgentMushroomKingdomState implements AgentMushroomKingdomYeti
             avoidedHuntMapId = 0;
         }
         if (questChanged) {
+            clearCheckpointRoute();
             huntMapQuestId = 0;
             selectedHuntMapId = 0;
             clearYetiLobbyVisit();
@@ -88,6 +94,7 @@ public final class AgentMushroomKingdomState implements AgentMushroomKingdomYeti
             helmetPepeKills = 0;
             yetiUnwantedRolls = 0;
         }
+        if (mapId != 106021500) yetiRollCounted = false;
         currentQuestId = questId;
         observedMetric = metric;
         observedMapId = mapId;
@@ -132,10 +139,34 @@ public final class AgentMushroomKingdomState implements AgentMushroomKingdomYeti
     public synchronized int checkpointRecoveries() { return checkpointRecoveries; }
     public synchronized String lastRecovery() { return lastRecovery; }
 
+    public synchronized void beginCheckpointRoute(int mapId, long nowMs) {
+        recoveryMapId = mapId;
+        recoveryStartedAtMs = nowMs;
+    }
+
+    public synchronized int recoveryMapId() { return recoveryMapId; }
+    public synchronized long recoveryStartedAtMs() { return recoveryStartedAtMs; }
+    public synchronized void clearCheckpointRoute() {
+        recoveryMapId = 0;
+        recoveryStartedAtMs = 0L;
+    }
+
+    public synchronized void recordCombatProgress(long nowMs) {
+        if (nowMs <= objectiveProgressAtMs) return;
+        objectiveProgressAtMs = nowMs;
+        recoveryStage = 0;
+        checkpointRecoveries = 0;
+    }
+
     public synchronized void recordHelmetPepeKill() { helmetPepeKills++; }
     public synchronized int helmetPepeKills() { return helmetPepeKills; }
 
-    public synchronized int recordUnwantedYetiRoll() { return ++yetiUnwantedRolls; }
+    public synchronized boolean recordUnwantedYetiRoll() {
+        if (yetiRollCounted) return false;
+        yetiRollCounted = true;
+        yetiUnwantedRolls++;
+        return true;
+    }
     public synchronized void resetUnwantedYetiRolls() { yetiUnwantedRolls = 0; }
     public synchronized int yetiUnwantedRolls() { return yetiUnwantedRolls; }
 

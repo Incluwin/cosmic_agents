@@ -108,6 +108,8 @@ public final class AgentRecoveryTeleportService {
                                                    Character agent,
                                                    Point targetPosition,
                                                    RecoveryHooks hooks) {
+        if (server.agents.progression.AgentMushroomKingdomMovementRecovery.blockWithoutTeleport(
+                entry, agent, "movement exceeded the recovery distance")) return true;
         Point from = new Point(agent.getPosition());
         Point spawn = hooks.groundPointFinder().apply(agent.getMap(), new Point(targetPosition.x, targetPosition.y - 1));
         if (spawn == null) {

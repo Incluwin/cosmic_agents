@@ -109,7 +109,11 @@ public final class AgentMushroomKingdomYetiFarmRuntime {
             if (!state.yetiRunCounted()) {
                 weaponBox = AgentPepeEquipmentCatalog.weaponBoxItemId(agent.getJob().getId());
                 int mixedBox = AgentPepeEquipmentCatalog.mixedBoxItemId(agent.getJob().getId());
-                gateway.lootNearby(agent, Set.of(weaponBox, mixedBox));
+                if (gateway.prepareObjectiveLoot(entry, agent, Set.of(weaponBox, mixedBox))) {
+                    gateway.grind(entry, Set.of());
+                    state.active("walking into pickup range of the relevant King Pepe class box");
+                    return true;
+                }
                 boolean relevantBox = gateway.itemCount(agent, weaponBox) > 0
                         || gateway.itemCount(agent, mixedBox) > 0;
                 AgentPepeEquipmentCatalog.openRelevantBoxes(agent, gateway);
@@ -171,7 +175,12 @@ public final class AgentMushroomKingdomYetiFarmRuntime {
     public static void cancel(AgentRuntimeEntry entry, Character agent) {
         AgentPrimitiveCapabilityGatewayRuntime.gateway().stop(entry);
         entry.capabilityStates().find(AgentMushroomKingdomPostStoryState.STATE_KEY)
-                .ifPresent(state -> finishParty(agent, state));
+                .ifPresent(state -> {
+                    finishParty(agent, state);
+                    if (state.phase() == AgentMushroomKingdomPostStoryState.Phase.ACTIVE) {
+                        state.complete("Yeti farming cancelled");
+                    }
+                });
         AgentMushroomKingdomFarmProgressRuntime.recordStopReason(
                 agent.getId(), "Yeti farming cancelled", System.currentTimeMillis());
     }

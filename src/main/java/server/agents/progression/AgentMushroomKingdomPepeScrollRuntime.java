@@ -130,6 +130,9 @@ public final class AgentMushroomKingdomPepeScrollRuntime {
     public static void cancel(AgentRuntimeEntry entry) {
         AgentPrimitiveCapabilityGatewayRuntime.gateway().stop(entry);
         release(entry);
+        entry.capabilityStates().find(AgentMushroomKingdomPostStoryState.STATE_KEY)
+                .filter(state -> state.phase() == AgentMushroomKingdomPostStoryState.Phase.ACTIVE)
+                .ifPresent(state -> state.complete("Pepe scroll plan cancelled"));
     }
 
     private static int selectedMap(AgentRuntimeEntry entry, Character agent, int mobId,

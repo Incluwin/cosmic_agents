@@ -7,6 +7,7 @@ import client.inventory.WeaponType;
 import server.agents.capabilities.combat.AgentAttackExecutionProvider;
 import server.agents.capabilities.navigation.AgentNavigationGraph;
 import server.agents.capabilities.navigation.AgentNavigationGraphService;
+import server.agents.capabilities.navigation.AgentNavigationPathService;
 import server.agents.capabilities.movement.AgentMovementStateRuntime;
 import server.agents.capabilities.movement.AgentPatrolStateRuntime;
 import server.agents.capabilities.combat.AgentCombatConfig;
@@ -42,27 +43,64 @@ public final class AgentGrindLootTargetService {
     public static boolean prepareNearestObjectiveItem(AgentRuntimeEntry entry,
                                                       Character agent,
                                                       Set<Integer> itemIds) {
+        return prepareNearestObjectiveItem(entry, agent, itemIds, System.currentTimeMillis());
+    }
+
+    static boolean prepareNearestObjectiveItem(AgentRuntimeEntry entry, Character agent,
+                                               Set<Integer> itemIds, long nowMs) {
         if (entry == null || agent == null || agent.getMap() == null
-                || itemIds == null || itemIds.isEmpty()) {
+                || agent.getPosition() == null || itemIds == null || itemIds.isEmpty()) {
             return false;
         }
         validateCachedGrindLootTarget(entry, agent);
-        if (AgentGrindLootStateRuntime.hasObjectiveLootTarget(entry)) {
-            return true;
-        }
-        long nowMs = System.currentTimeMillis();
+        AgentObjectiveLootApproachState approach = entry.capabilityStates()
+                .require(AgentObjectiveLootApproachState.STATE_KEY);
         Point position = agent.getPosition();
+        int mapId = agent.getMapId();
+        if (AgentGrindLootStateRuntime.hasObjectiveLootTarget(entry)) {
+            MapItem target = AgentGrindLootStateRuntime.grindLootTarget(entry);
+            if (itemIds.contains(target.getItemId())
+                    && !AgentGrindLootStateRuntime.isRetrySuppressed(entry, target, nowMs)
+                    && AgentLootEligibility.canBotTargetLoot(entry, agent, agent.getMap(), target, nowMs)
+                    && approach.approach(mapId, target.getObjectId(),
+                    position.distance(target.getPosition()), nowMs)) return true;
+            AgentGrindLootStateRuntime.clearObjectiveLootTarget(entry);
+        }
+        AgentNavigationGraph graph = AgentNavigationGraphService.peekBestGraph(
+                agent.getMap(), AgentMovementStateRuntime.movementProfile(entry));
         MapItem nearest = agent.getMap().getDroppedItems().stream()
                 .filter(drop -> drop.getMeso() <= 0 && itemIds.contains(drop.getItemId()))
+                .filter(drop -> !approach.suppressed(mapId, drop.getObjectId(), nowMs)
+                        && !AgentGrindLootStateRuntime.isRetrySuppressed(entry, drop, nowMs))
                 .filter(drop -> AgentLootEligibility.canBotTargetLoot(
                         entry, agent, agent.getMap(), drop, nowMs))
-                .min(Comparator
+                .sorted(Comparator
                         .comparingDouble((MapItem drop) ->
                                 drop.getPosition().distanceSq(position))
                         .thenComparingInt(MapItem::getObjectId))
+                .filter(drop -> {
+                    if (objectiveDropReachable(entry, agent, graph, position, drop)) return true;
+                    approach.suppress(drop.getObjectId(), nowMs);
+                    return false;
+                })
+                .filter(drop -> approach.approach(mapId, drop.getObjectId(),
+                        position.distance(drop.getPosition()), nowMs))
+                .findFirst()
                 .orElse(null);
-        AgentGrindLootStateRuntime.setObjectiveLootTarget(entry, nearest);
+        if (nearest != null) AgentGrindLootStateRuntime.setObjectiveLootTarget(entry, nearest);
         return nearest != null;
+    }
+
+    private static boolean objectiveDropReachable(AgentRuntimeEntry entry, Character agent,
+                                                   AgentNavigationGraph graph, Point position,
+                                                   MapItem drop) {
+        // A cold graph gets a bounded ordinary movement attempt while navigation warms it.
+        if (graph == null) return true;
+        int from = graph.findRegionId(agent.getMap(), position);
+        int to = graph.findRegionId(agent.getMap(), drop.getPosition());
+        if (from < 0) return true;
+        return AgentNavigationPathService.reliableRouteCost(graph, agent.getMap(), position,
+                from, drop.getPosition(), to, 0L, entry, agent, Long.MAX_VALUE) != Long.MAX_VALUE;
     }
 
     public static void refreshGrindLootTarget(AgentRuntimeEntry entry,

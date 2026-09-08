@@ -22,6 +22,43 @@ import static org.mockito.Mockito.when;
 
 class AgentRecoveryTeleportServiceTest {
     @Test
+    void mushroomCastleBlocksBothDistanceRecoveriesWithoutMoving() {
+        MapleMap map = map(new Rectangle(0, 0, 100, 100));
+        Character agent = character(map, new Point(500, 500));
+        when(agent.getMapId()).thenReturn(106021500);
+        AgentRuntimeEntry entry = entry(agent);
+        var state = entry.capabilityStates().require(
+                server.agents.progression.AgentMushroomKingdomState.STATE_KEY);
+        state.begin(1L);
+        Counters counters = new Counters(null);
+        assertTrue(AgentRecoveryTeleportService.recoverTeleportDistance(
+                entry, agent, new Point(50, 50), 4000, 600, hooks(counters)));
+        assertEquals(server.agents.progression.AgentMushroomKingdomState.Phase.BLOCKED, state.phase());
+        assertEquals(new Point(500, 500), agent.getPosition());
+        AgentModeStateRuntime.startGrinding(entry);
+        Character anchor = character(map, new Point(50, 50));
+        assertTrue(AgentRecoveryTeleportService.recoverGrindPartyTeleportDistance(
+                entry, agent, anchor, 100, 20, 1, hooks(counters)));
+        counters.assertNoSideEffects();
+    }
+
+    @Test
+    void postStoryCastleFarmingAlsoBlocksRecoveryTeleport() {
+        MapleMap map = map(new Rectangle(0, 0, 100, 100));
+        Character agent = character(map, new Point(500, 500));
+        when(agent.getMapId()).thenReturn(106021500);
+        AgentRuntimeEntry entry = entry(agent);
+        var state = entry.capabilityStates().require(
+                server.agents.progression.AgentMushroomKingdomPostStoryState.STATE_KEY);
+        state.begin(server.agents.progression.AgentMushroomKingdomPostStoryState.Activity.YETI_FARM, 1L);
+        Counters counters = new Counters(null);
+        assertTrue(AgentRecoveryTeleportService.recoverTeleportDistance(
+                entry, agent, new Point(50, 50), 4000, 600, hooks(counters)));
+        assertEquals(server.agents.progression.AgentMushroomKingdomPostStoryState.Phase.BLOCKED, state.phase());
+        counters.assertNoSideEffects();
+    }
+
+    @Test
     void recoversWhenTargetIsBeyondTeleportDistance() {
         MapleMap map = map(new Rectangle(0, 0, 1000, 1000));
         Character agent = character(map, new Point(0, 0));

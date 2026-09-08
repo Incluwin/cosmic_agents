@@ -4,7 +4,7 @@
 
 The runner follows the ordinary quest, NPC, portal, navigation, combat, loot, solo-instance, and boss paths through quest `2336`. For large collections, the cohort must obtain 30 real drops in total and every branch must demonstrate combat for that quest before the runner supplies repetitive remainder counts. A branch that personally sees no RNG drop is not forced to repeat a proven route after the cohort threshold is met.
 
-Quest `2326` may receive its one-off rare item only after the cohort demonstrates real Helmet Pepe combat. Each randomized Yeti variant must take real damage and receive real kill credit, but its remaining HP may be shortened. The Prime Minister is fought at full real HP. A missing Royal Seal may be supplied only after that same branch demonstrates real Prime Minister combat. Repeated long castle travel may be staged only after the required natural route has already been demonstrated. Optional quest `2337` is outside the mainline pass condition.
+Quest `2326` may receive its one-off rare item only after the cohort demonstrates real Helmet Pepe combat. Each randomized Yeti variant must take real damage and receive real kill credit, but its remaining HP may be shortened. The Prime Minister is fought at full real HP. A missing Royal Seal may be supplied only after that same branch demonstrates real Prime Minister combat. The runner does not hard-stage positions or maps during a run: repeated travel, portal approaches, combat, and drop collection use the same navigation and proximity-loot paths as production. Optional quest `2337` is outside the mainline pass condition.
 
 Stop any server using this worktree's compiled classes, then build the test runtime and dependency classpath:
 
@@ -50,7 +50,7 @@ Named diagnostic snapshots provide reproducible development checkpoints without 
 & "$env:JAVA_HOME\bin\java.exe" -Dmushroom.live.snapshot=q2325-entry -cp $cp server.agents.progression.AgentMushroomKingdomLiveSmokeMain fighter
 ```
 
-The q2323 runtime uses authored portal `4` from map `106020401` to `106020400` and recovers a stale grounded character that is physically below a Mushroom Kingdom map. Boss-route staging accepts q2333 completion or downstream q2335/q2336 activity; q2331 counts as durable post-boss evidence only after completion because it is intentionally started before the fight.
+The q2323 runtime uses authored portal `4` from map `106020401` to `106020400`. A stale grounded character physically below a Mushroom Kingdom map is blocked for diagnosis instead of being teleported. Boss-route reconciliation accepts q2333 completion or downstream q2335/q2336 activity; q2331 counts as durable post-boss evidence only after completion because it is intentionally started before the fight.
 
 A successful run ends with:
 

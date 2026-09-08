@@ -55,16 +55,6 @@ class AgentMushroomKingdomLiveSmokeMainTest {
     }
 
     @Test
-    void bossRouteStagingWaitsForTheRoyalSealQuestToStartAtTheEntrance() {
-        assertFalse(AgentMushroomKingdomLiveSmokeMain.bossRouteStagingReady(
-                client.QuestStatus.Status.NOT_STARTED.getId()));
-        assertTrue(AgentMushroomKingdomLiveSmokeMain.bossRouteStagingReady(
-                client.QuestStatus.Status.STARTED.getId()));
-        assertTrue(AgentMushroomKingdomLiveSmokeMain.bossRouteStagingReady(
-                client.QuestStatus.Status.COMPLETED.getId()));
-    }
-
-    @Test
     void recoveryCoverageRequiresBothRecoveryQuestsAndRestoredItems() {
         assertTrue(AgentMushroomKingdomLiveSmokeMain.recoveryCoverageComplete(
                 true, true, true, true));

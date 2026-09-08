@@ -28,6 +28,99 @@ import static org.mockito.Mockito.when;
 
 class AgentGrindLootTargetServiceTest {
     @Test
+    void absentObjectiveDropsDoNotClearOrdinaryLootAlreadyBeingApproached() {
+        ObjectiveFixture fixture = new ObjectiveFixture();
+        AgentGrindLootStateRuntime.setGrindLootTarget(fixture.entry, fixture.far);
+        try (var graphs = mockStatic(server.agents.capabilities.navigation.AgentNavigationGraphService.class)) {
+            assertFalse(AgentGrindLootTargetService.prepareNearestObjectiveItem(
+                    fixture.entry, fixture.agent, java.util.Set.of(4001318), 10_000L));
+            assertSame(fixture.far, AgentGrindLootStateRuntime.grindLootTarget(fixture.entry));
+        }
+    }
+
+    @Test
+    void objectiveLootAbandonsAStuckDropAndTriesAnAlternativeWithoutPickingUpRemotely() {
+        ObjectiveFixture fixture = new ObjectiveFixture();
+        try (var eligibility = mockStatic(AgentLootEligibility.class);
+             var graphs = mockStatic(server.agents.capabilities.navigation.AgentNavigationGraphService.class)) {
+            eligibility.when(() -> AgentLootEligibility.canBotTargetLoot(any(), any(), any(), any(),
+                    org.mockito.ArgumentMatchers.anyLong())).thenReturn(true);
+            assertTrue(fixture.prepare(10_000L));
+            assertSame(fixture.near, AgentGrindLootStateRuntime.grindLootTarget(fixture.entry));
+            assertTrue(fixture.prepare(40_001L));
+            assertSame(fixture.far, AgentGrindLootStateRuntime.grindLootTarget(fixture.entry));
+            assertTrue(AgentGrindLootStateRuntime.isRetrySuppressed(fixture.entry, fixture.near, 40_001L));
+            assertTrue(fixture.prepare(41_000L));
+            assertSame(fixture.far, AgentGrindLootStateRuntime.grindLootTarget(fixture.entry));
+            org.mockito.Mockito.verify(fixture.agent, org.mockito.Mockito.never()).pickupItem(any());
+        }
+    }
+
+    @Test
+    void objectiveLootHonoursRetrySuppressionAndChangedObjectiveItems() {
+        ObjectiveFixture fixture = new ObjectiveFixture();
+        try (var eligibility = mockStatic(AgentLootEligibility.class);
+             var graphs = mockStatic(server.agents.capabilities.navigation.AgentNavigationGraphService.class)) {
+            eligibility.when(() -> AgentLootEligibility.canBotTargetLoot(any(), any(), any(), any(),
+                    org.mockito.ArgumentMatchers.anyLong())).thenReturn(true);
+            AgentGrindLootStateRuntime.suppressRetry(fixture.entry, fixture.near, 50_000L);
+            assertTrue(fixture.prepare(10_000L));
+            assertSame(fixture.far, AgentGrindLootStateRuntime.grindLootTarget(fixture.entry));
+            assertFalse(AgentGrindLootTargetService.prepareNearestObjectiveItem(
+                    fixture.entry, fixture.agent, java.util.Set.of(4001318), 11_000L));
+            assertFalse(AgentGrindLootStateRuntime.hasObjectiveLootTarget(fixture.entry));
+        }
+    }
+
+    @Test
+    void objectiveLootSkipsTheNearestDropWhenItsRouteIsNotExecutable() {
+        ObjectiveFixture fixture = new ObjectiveFixture();
+        var graph = mock(server.agents.capabilities.navigation.AgentNavigationGraph.class);
+        when(graph.findRegionId(fixture.map, new Point())).thenReturn(1);
+        when(graph.findRegionId(fixture.map, fixture.near.getPosition())).thenReturn(2);
+        when(graph.findRegionId(fixture.map, fixture.far.getPosition())).thenReturn(3);
+        try (var eligibility = mockStatic(AgentLootEligibility.class);
+             var graphs = mockStatic(server.agents.capabilities.navigation.AgentNavigationGraphService.class);
+             var paths = mockStatic(server.agents.capabilities.navigation.AgentNavigationPathService.class)) {
+            eligibility.when(() -> AgentLootEligibility.canBotTargetLoot(any(), any(), any(), any(),
+                    org.mockito.ArgumentMatchers.anyLong())).thenReturn(true);
+            graphs.when(() -> server.agents.capabilities.navigation.AgentNavigationGraphService
+                    .peekBestGraph(any(), any())).thenReturn(graph);
+            paths.when(() -> server.agents.capabilities.navigation.AgentNavigationPathService.reliableRouteCost(
+                    graph, fixture.map, new Point(), 1, fixture.near.getPosition(), 2,
+                    0L, fixture.entry, fixture.agent, Long.MAX_VALUE)).thenReturn(Long.MAX_VALUE);
+            assertTrue(fixture.prepare(10_000L));
+            assertSame(fixture.far, AgentGrindLootStateRuntime.grindLootTarget(fixture.entry));
+        }
+    }
+
+    private static final class ObjectiveFixture {
+        final Character agent = mock(Character.class);
+        final MapleMap map = mock(MapleMap.class);
+        final AgentRuntimeEntry entry = new AgentRuntimeEntry(agent, null, null);
+        final MapItem near = mockLoot(1, false);
+        final MapItem far = mockLoot(2, false);
+
+        ObjectiveFixture() {
+            when(agent.getMap()).thenReturn(map);
+            when(agent.getMapId()).thenReturn(106020100);
+            when(agent.getPosition()).thenReturn(new Point());
+            when(near.getPosition()).thenReturn(new Point(150, 0));
+            when(far.getPosition()).thenReturn(new Point(300, 0));
+            for (MapItem drop : List.of(near, far)) {
+                when(drop.getItemId()).thenReturn(4000499);
+                when(map.getMapObject(drop.getObjectId())).thenReturn(drop);
+            }
+            when(map.getDroppedItems()).thenReturn(List.of(near, far));
+        }
+
+        boolean prepare(long nowMs) {
+            return AgentGrindLootTargetService.prepareNearestObjectiveItem(
+                    entry, agent, java.util.Set.of(4000499), nowMs);
+        }
+    }
+
+    @Test
     void validateCachedTargetKeepsLiveMapObject() {
         MapleMap map = mock(MapleMap.class);
         Character agent = mock(Character.class);

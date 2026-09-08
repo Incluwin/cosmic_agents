@@ -72,6 +72,10 @@ public final class AgentAirbornePhysicsService {
         Point recoveryPoint = belowMapRecoveryPoint(
                 map, nextPosition, AgentMapStateRuntime.entryPortalId(entry));
         if (recoveryPoint != null) {
+            if (server.agents.progression.AgentMushroomKingdomMovementRecovery.blockWithoutTeleport(
+                    entry, agent, "fell below the map's reachable footholds")) {
+                return AgentAirborneStepResult.CONTINUE;
+            }
             log.warn("Recovered Agent '{}' below map bounds map={} from={} to={}",
                     agent.getName(), agent.getMapId(), nextPosition, recoveryPoint);
             AgentMovementPoseService.teleportTo(entry, agent, recoveryPoint);

@@ -37,7 +37,7 @@ The job-specific entry quests are `2300`-`2310`. For the five Explorer families 
 ## Capability contracts
 
 - **Scripted visit objective:** A quest with no WZ kill/item completion requirement may still be completed by a portal or quest script. Represent the exact visit trigger and verify the live quest flag after interaction.
-- **Field collection:** Use pack-wide quest debt, density-aware map selection, quest-item-preserving loot, and bounded map fallback. Authored maps are preferences, not unconditional locks.
+- **Field collection:** Use pack-wide quest debt, density-aware map selection, and bounded map fallback. Objective drops are handed to the shared grind-loot targeter, which walks into ordinary pickup range before collecting them; authored maps are preferences, not unconditional locks.
 - **Instance objective:** `KingPepeAndYetis` accepts a one-to-three-member story party with exact colour progress, or a separate post-story farming party whose members completed `2336`; mixed modes are rejected. The Prime Minister remains solo. Entry, boss progress, death, timeout, and re-entry reconcile from live quest/map state without fabricating boss credit.
 - **Item-triggered quest:** `2332` starts when `4032388` is present. Reconciliation checks the item and quest state before trying an NPC that does not own the start.
 - **Recovery quest:** If the royal seal was not picked up, re-enter through the real Prime Minister portal recovery path. `2342` remains catalogued as a server-side recovery quest and is never fabricated by the plan runtime.
@@ -45,10 +45,13 @@ The job-specific entry quests are `2300`-`2310`. For the five Explorer families 
 
 ## Safety and recovery
 
-- Reserve ETC slots before entry, the three 100/200-item collection stages, and boss loot.
+- Reserve ETC slots before entry, the three 100/200-item collection stages, and boss loot. Inventory recovery frees the full requested number of slots, including both Truth Revealed start-item slots.
 - Suspend for supply recovery outside an active private instance; inside an instance use bounded chair/potion/death policy and return a typed failure if completion becomes unsafe.
-- On navigation failure, preserve the current quest node, suppress the failing edge temporarily, and replan. Do not force-warp except through the quest's own script.
-- If a stale grounded state leaves an Agent physically below a Mushroom Kingdom map, recover it to the grounded entry portal, refresh navigation, and then use the authored route. Quest `2323` explicitly exits `106020401` through portal `4` to `106020400`.
+- On navigation failure, preserve the current quest node, suppress the failing edge temporarily, refresh navigation, and replan through the authored route. Repeated portal rejection becomes a typed block rather than a direct position or map relocation. Only the quest's own NPC/portal script may warp an Agent.
+- Shared airborne and distance recovery also stop Mushroom Castle Agents at their actual position and report a block instead of teleporting. This covers story, Yeti farming, and Pepe-scroll work. Quest `2323` explicitly exits `106020401` through portal `4` to `106020400`.
+- Checkpoint recovery retains its destination until actual arrival or a bounded ten-minute failure; ordinary quest logic does not interrupt that route.
+- Quest `2330` uses the hunting watchdog. Each newly credited colour and accepted positive Yeti damage refreshes durable progress. Duplicate-roll pity counts once per instance, regardless of time spent approaching the exit.
+- Objective loot checks executable routes when the navigation graph is available. One drop receives at most 30 seconds without approach progress or 90 seconds total, followed by a 60-second retry cooldown shared with ordinary loot selection. Cold graphs use the same bounded physical approach while navigation warms up.
 - On low drop progress, damage to a relevant mob counts as progress; map changes occur only after spawn evidence and the bounded local lease are exhausted.
 - On restart, derive the frontier from completed/active quests and required items. Never restart entry quests whose job-specific sibling is complete.
 
@@ -65,7 +68,7 @@ The job-specific entry quests are `2300`-`2310`. For the five Explorer families 
 
 Completion requires the non-repeatable graph, including Bruce and James/provisions branches, ending at `2336`. Repeatable extermination `2337` and replacement-item recovery `2338` remain outside completion.
 
-The disposable live runner also exposes `q2323-return`, `q2323-out-of-bounds`, and `q2325-entry` diagnostic snapshots. These are focused development checkpoints; release acceptance still requires a clean run from the five real job-family entry quests through `2336`.
+The disposable live runner also exposes `q2323-return`, `q2323-out-of-bounds`, and `q2325-entry` diagnostic snapshots. The out-of-bounds snapshot verifies the typed block/no-teleport policy. These are focused development checkpoints; release acceptance still requires a clean run from the five real job-family entry quests through `2336`.
 
 ## Cohort fixture
 

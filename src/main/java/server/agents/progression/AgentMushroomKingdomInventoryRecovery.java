@@ -32,10 +32,11 @@ final class AgentMushroomKingdomInventoryRecovery {
 
     private AgentMushroomKingdomInventoryRecovery() { }
 
-    static Result freeSlot(AgentRuntimeEntry entry, Character agent, int requiredItemId,
+    static Result freeSlot(AgentRuntimeEntry entry, Character agent, int requiredItemId, int requiredSlots,
                            PrimitiveCapabilityGateway gateway) {
         if (entry == null || agent == null || gateway == null) return Result.none("missing recovery context");
-        if (gateway.freeSlots(agent, requiredItemId) > 0) return new Result(true, 0, "slot already free");
+        int before = gateway.freeSlots(agent, requiredItemId);
+        if (before >= requiredSlots) return new Result(true, 0, "slots already free");
         InventoryType type = ItemConstants.getInventoryType(requiredItemId);
         InventoryGateway inventory = AgentInventoryGatewayRuntime.inventory();
         Item candidate = type == InventoryType.EQUIP
@@ -43,7 +44,7 @@ final class AgentMushroomKingdomInventoryRecovery {
                 : ordinaryJunk(entry, agent, type, inventory);
         if (candidate == null) return Result.none("no safe " + type + " junk can be discarded");
         inventory.dropItem(agent, type, candidate.getPosition(), candidate.getQuantity());
-        boolean recovered = gateway.freeSlots(agent, requiredItemId) > 0;
+        boolean recovered = gateway.freeSlots(agent, requiredItemId) > before;
         return new Result(recovered, candidate.getItemId(), recovered
                 ? "discarded safe junk item " + candidate.getItemId()
                 : "discarded item but no slot became available");

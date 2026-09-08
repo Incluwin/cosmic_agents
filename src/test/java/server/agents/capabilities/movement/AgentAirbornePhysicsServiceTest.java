@@ -21,6 +21,30 @@ import static org.mockito.Mockito.when;
 
 class AgentAirbornePhysicsServiceTest {
     @Test
+    void mushroomCastleFallBlocksAtTheActualPositionWithoutTeleporting() {
+        MapleMap map = mock(MapleMap.class);
+        when(map.getMapArea()).thenReturn(new Rectangle(0, 0, 1000, 500));
+        when(map.getPointBelow(any(Point.class))).thenReturn(new Point(250, 400));
+        Character agent = mock(Character.class);
+        when(agent.getMap()).thenReturn(map);
+        when(agent.getMapId()).thenReturn(106020401);
+        when(agent.getPosition()).thenReturn(new Point(250, 565));
+        when(agent.getHp()).thenReturn(1);
+        AgentRuntimeEntry entry = new AgentRuntimeEntry(agent, null, null);
+        var state = entry.capabilityStates().require(
+                server.agents.progression.AgentMushroomKingdomState.STATE_KEY);
+        state.begin(1L);
+        AgentMovementStateRuntime.setInAir(entry, true);
+        AgentMovementPhysicsStateRuntime.setPhysicsPosition(entry, agent.getPosition());
+
+        assertEquals(AgentAirborneStepResult.CONTINUE,
+                AgentAirbornePhysicsService.stepAirborne(entry, agent));
+        assertEquals(server.agents.progression.AgentMushroomKingdomState.Phase.BLOCKED, state.phase());
+        org.mockito.Mockito.verify(agent, org.mockito.Mockito.never()).setPosition(any(Point.class));
+        assertFalse(AgentMovementStateRuntime.inAir(entry));
+    }
+
+    @Test
     void stepAirborneMapsLegacyContinueResult() {
         Character agent = mock(Character.class);
         when(agent.getPosition()).thenReturn(new Point(10, 20));

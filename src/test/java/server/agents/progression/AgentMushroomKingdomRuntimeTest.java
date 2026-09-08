@@ -30,6 +30,8 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class AgentMushroomKingdomRuntimeTest {
@@ -41,7 +43,7 @@ class AgentMushroomKingdomRuntimeTest {
     }
 
     @Test
-    void stagesAnUnobservedAgentAfterNpcTopologyMakesNoProgress() {
+    void reapproachesAnUnobservedNpcThroughNormalNavigation() {
         Harness harness = new Harness(110, List.of(3300005, 3300006, 3300007));
         harness.completeBefore(2324);
         harness.mapId = AgentMushroomKingdomCatalog.ENTRANCE_MAP_ID;
@@ -55,10 +57,11 @@ class AgentMushroomKingdomRuntimeTest {
         harness.tick();
 
         assertEquals(npc, harness.position);
+        verify(harness.gateway, never()).stagePosition(eq(harness.entry), eq(harness.agent), any());
     }
 
     @Test
-    void q2323ReturnSnapshotRecoversACharacterThatFallsBelowTheMapBounds() {
+    void q2323ReturnSnapshotBlocksRatherThanTeleportingACharacterBelowMapBounds() {
         Harness harness = new Harness(110, List.of(3300005, 3300006, 3300007));
         harness.completeBefore(2323);
         harness.statuses.put(2323, QuestStatus.Status.STARTED.getId());
@@ -68,14 +71,11 @@ class AgentMushroomKingdomRuntimeTest {
 
         harness.tick();
 
-        assertEquals(new Point(0, 0), harness.position);
+        assertEquals(new Point(382, 2_214), harness.position);
         assertEquals(106020401, harness.mapId);
-        assertTrue(harness.state.reason().contains("map 106020401"));
-
-        harness.tick();
-
-        assertTrue(harness.portalEntries.contains("106020401:4"));
-        assertEquals(106020400, harness.mapId);
+        assertEquals(AgentMushroomKingdomState.Phase.BLOCKED, harness.state.phase());
+        assertTrue(harness.state.reason().contains("refusing to teleport"));
+        verify(harness.gateway, never()).stagePosition(eq(harness.entry), eq(harness.agent), any());
     }
 
     @Test
@@ -137,6 +137,23 @@ class AgentMushroomKingdomRuntimeTest {
 
         assertEquals(106020200, harness.mapId);
         assertEquals(106020200, harness.state.selectedHuntMap(2312));
+    }
+
+    @Test
+    void collectionQuestDelegatesDropsToTheSharedProximityLootPath() {
+        Harness harness = new Harness(110, List.of(3300005, 3300006, 3300007));
+        harness.completeBefore(2312);
+        harness.statuses.put(2312, QuestStatus.Status.STARTED.getId());
+        harness.items.put(4000499, 0);
+        when(harness.gateway.prepareObjectiveLoot(harness.entry, harness.agent, Set.of(4000499)))
+                .thenReturn(true);
+
+        harness.tick();
+
+        verify(harness.gateway).prepareObjectiveLoot(
+                harness.entry, harness.agent, Set.of(4000499));
+        verify(harness.gateway, never()).lootNearby(
+                eq(harness.agent), org.mockito.ArgumentMatchers.anySet());
     }
 
     @Test
@@ -334,7 +351,7 @@ class AgentMushroomKingdomRuntimeTest {
     }
 
     @Test
-    void stalledUnobservedCastlePortalApproachStagesAtThePortalAndContinues() {
+    void stalledUnobservedCastlePortalApproachReplansAndContinuesNormally() {
         Harness harness = new Harness(110, List.of(3300005, 3300006, 3300007));
         harness.completeBefore(2325);
         harness.statuses.put(2325, QuestStatus.Status.STARTED.getId());
@@ -347,18 +364,15 @@ class AgentMushroomKingdomRuntimeTest {
         harness.tick();
         assertEquals(106021000, harness.mapId);
 
-        harness.nowMs += 20_001L;
         harness.tick();
         assertEquals(new Point(1_900, 262), harness.position);
-        assertEquals(106021000, harness.mapId);
-
-        harness.tick();
         assertEquals(106021100, harness.mapId);
         assertTrue(harness.portalEntries.contains("106021000:2"));
+        verify(harness.gateway, never()).stagePosition(eq(harness.entry), eq(harness.agent), any());
     }
 
     @Test
-    void stalledUnobservedYetiLeaderStagesAtTheBossDoorAndEnters() {
+    void stalledUnobservedYetiLeaderNavigatesToTheBossDoorAndEnters() {
         Harness harness = new Harness(110, List.of(3300005, 3300006, 3300007));
         harness.completeBefore(2330);
         harness.statuses.put(2330, QuestStatus.Status.STARTED.getId());
@@ -377,6 +391,7 @@ class AgentMushroomKingdomRuntimeTest {
 
         harness.tick();
         assertEquals(106021500, harness.mapId);
+        verify(harness.gateway, never()).stagePosition(eq(harness.entry), eq(harness.agent), any());
     }
 
     @Test
@@ -519,7 +534,7 @@ class AgentMushroomKingdomRuntimeTest {
     }
 
     @Test
-    void failedDeterministicPortalRelocatesToItsProvenDestination() {
+    void failedDeterministicPortalBlocksRatherThanRelocating() {
         Harness harness = new Harness(110, List.of(3300005, 3300006, 3300007));
         harness.completeBefore(2335);
         harness.statuses.put(2335, QuestStatus.Status.STARTED.getId());
@@ -530,18 +545,12 @@ class AgentMushroomKingdomRuntimeTest {
         harness.items.put(4032405, 1);
         harness.mapId = 106021000;
         doAnswer(ignored -> false).when(harness.gateway).enterPortal(harness.agent, 3);
-        when(harness.gateway.recoverToMap(harness.entry, harness.agent, 106021001))
-                .thenAnswer(ignored -> {
-                    harness.mapId = 106021001;
-                    return true;
-                });
+        for (int attempt = 0; attempt < 8; attempt++) harness.tick();
 
-        harness.tick();
-        harness.tick();
-        harness.tick();
-
-        assertEquals(106021001, harness.mapId);
-        assertTrue(harness.state.reason().contains("recovered secret-room portal"));
+        assertEquals(106021000, harness.mapId);
+        assertEquals(AgentMushroomKingdomState.Phase.BLOCKED, harness.state.phase());
+        assertTrue(harness.state.reason().contains("refusing to relocate"));
+        verify(harness.gateway, never()).recoverToMap(eq(harness.entry), eq(harness.agent), anyInt());
     }
 
     @Test
@@ -562,19 +571,14 @@ class AgentMushroomKingdomRuntimeTest {
         harness.items.put(4000499, 0);
         AgentMushroomKingdomCatalog.QuestNode node = AgentMushroomKingdomCatalog.require(2312);
         harness.tick();
-        when(harness.gateway.recoverToMap(harness.entry, harness.agent, node.startMapId()))
-                .thenAnswer(ignored -> {
-                    harness.mapId = node.startMapId();
-                    return true;
-                });
-
         harness.nowMs += 20 * 60_000L;
         harness.tick();
 
         assertEquals(node.startMapId(), harness.mapId);
         assertEquals(AgentMushroomKingdomRecoveryPolicy.CHECKPOINT_STAGE,
                 harness.state.recoveryStage());
-        assertTrue(harness.state.reason().contains("clean checkpoint"));
+        assertTrue(harness.state.reason().contains("without relocation"));
+        verify(harness.gateway, never()).recoverToMap(eq(harness.entry), eq(harness.agent), anyInt());
     }
 
     @Test
@@ -586,20 +590,125 @@ class AgentMushroomKingdomRuntimeTest {
         when(harness.gateway.travelTo(eq(harness.entry), eq(harness.agent),
                 eq(106021201), anyLong())).thenReturn(new AgentRouteOutcome(
                 AgentRouteStatus.MOVING, 106020700, 106021201, 106020700, false));
-        when(harness.gateway.recoverToMap(harness.entry, harness.agent, 106021201))
-                .thenAnswer(ignored -> {
-                    harness.mapId = 106021201;
-                    return true;
-                });
-
         harness.tick();
         harness.nowMs += 3 * 60_000L;
         harness.tick();
 
-        assertEquals(106021201, harness.mapId);
-        assertEquals(AgentMushroomKingdomRecoveryPolicy.CHECKPOINT_STAGE,
-                harness.state.recoveryStage());
-        assertTrue(harness.state.reason().contains("clean checkpoint"));
+        assertEquals(106020700, harness.mapId);
+        assertEquals(106021201, harness.state.recoveryMapId());
+        assertTrue(harness.state.recoveryStage() < AgentMushroomKingdomRecoveryPolicy.CHECKPOINT_STAGE);
+        assertTrue(harness.state.reason().contains("without relocation"));
+        verify(harness.gateway, never()).recoverToMap(eq(harness.entry), eq(harness.agent), anyInt());
+    }
+
+    @Test
+    void checkpointRoutePersistsUntilArrivalInsteadOfResumingTheHunt() {
+        Harness harness = new Harness(110, List.of(3300005));
+        harness.completeBefore(2312);
+        harness.statuses.put(2312, QuestStatus.Status.STARTED.getId());
+        harness.items.put(4000499, 0);
+        harness.tick();
+        int field = harness.mapId;
+        int checkpoint = AgentMushroomKingdomCatalog.ENTRANCE_MAP_ID;
+        when(harness.gateway.travelTo(eq(harness.entry), eq(harness.agent), eq(checkpoint), anyLong()))
+                .thenReturn(new AgentRouteOutcome(AgentRouteStatus.MOVING, field, checkpoint, field, false));
+        harness.nowMs += 20 * 60_000L;
+        harness.tick();
+        org.mockito.Mockito.clearInvocations(harness.gateway);
+
+        harness.tick();
+        harness.tick();
+
+        assertEquals(checkpoint, harness.state.recoveryMapId());
+        verify(harness.gateway, org.mockito.Mockito.times(2)).travelTo(
+                eq(harness.entry), eq(harness.agent), eq(checkpoint), anyLong());
+        verify(harness.gateway, never()).prepareObjectiveLoot(any(), any(), any());
+        harness.mapId = checkpoint;
+        harness.tick();
+        assertEquals(0, harness.state.recoveryMapId());
+        assertEquals(AgentMushroomKingdomRecoveryPolicy.CHECKPOINT_STAGE, harness.state.recoveryStage());
+    }
+
+    @Test
+    void checkpointRouteHasABoundedFailureWithoutRelocation() {
+        Harness harness = new Harness(110, List.of(3300005));
+        harness.completeBefore(2312);
+        harness.statuses.put(2312, QuestStatus.Status.STARTED.getId());
+        harness.items.put(4000499, 0);
+        harness.tick();
+        harness.state.beginCheckpointRoute(106020000, harness.nowMs);
+        harness.nowMs += 10 * 60_000L;
+        harness.tick();
+        assertEquals(AgentMushroomKingdomState.Phase.BLOCKED, harness.state.phase());
+        assertEquals(0, harness.state.recoveryMapId());
+        verify(harness.gateway, never()).recoverToMap(any(), any(), anyInt());
+    }
+
+    @Test
+    void yetiColourCreditsRefreshTheWatchdogAndDoNotUseDialogueTimeout() {
+        Harness harness = new Harness(110, List.of(3300005));
+        harness.completeBefore(2330);
+        harness.statuses.put(2330, QuestStatus.Status.STARTED.getId());
+        harness.mapId = 106021500;
+        when(harness.gateway.liveMonsterCount(eq(harness.agent), any())).thenReturn(1);
+        harness.tick();
+        harness.nowMs += 11 * 60_000L;
+        harness.progress.put("2330:3300005", 1);
+        long creditTime = harness.nowMs;
+        harness.tick();
+        assertEquals(creditTime, harness.state.objectiveProgressAtMs());
+        assertEquals(AgentMushroomKingdomState.Phase.ACTIVE, harness.state.phase());
+        harness.nowMs += 11 * 60_000L;
+        harness.tick();
+        assertEquals(AgentMushroomKingdomState.Phase.ACTIVE, harness.state.phase());
+    }
+
+    @Test
+    void aDuplicateYetiCountsOnlyOnceWhileWalkingToItsExit() {
+        Harness harness = new Harness(110, List.of(3300005));
+        harness.completeBefore(2330);
+        harness.statuses.put(2330, QuestStatus.Status.STARTED.getId());
+        harness.progress.put("2330:3300005", 1);
+        harness.mapId = 106021500;
+        when(harness.gateway.liveMonsterCounts(harness.agent)).thenReturn(Map.of(3300005, 1));
+        when(harness.gateway.portalPosition(harness.agent, 1)).thenReturn(new Point(1000, 0));
+        org.mockito.Mockito.doNothing().when(harness.gateway).navigate(any(), any(), org.mockito.ArgumentMatchers.anyBoolean());
+        for (int tick = 0; tick < 8; tick++) harness.tick();
+        assertEquals(1, harness.state.yetiUnwantedRolls());
+        verify(harness.agent, never()).requestAgentMushroomYetiPityVariant(anyInt());
+        for (int visit = 0; visit < 2; visit++) {
+            harness.state.observe(2330, 5, 106021400, new Point(), harness.nowMs);
+            harness.tick();
+        }
+        verify(harness.agent).requestAgentMushroomYetiPityVariant(3300006);
+    }
+
+    @Test
+    void truthQuestFreesTheSecondEtcSlotWhenOneIsAlreadyAvailable() {
+        Harness harness = new Harness(110, List.of(3300005));
+        harness.completeBefore(2335);
+        harness.mapId = 106021600;
+        harness.freeSlots = 1;
+        var bag = mock(client.inventory.Inventory.class);
+        when(harness.agent.getInventory(client.inventory.InventoryType.ETC)).thenReturn(bag);
+        when(bag.getSlotLimit()).thenReturn((byte) 2);
+        var junk = mock(client.inventory.Item.class);
+        when(junk.getItemId()).thenReturn(4000000);
+        when(junk.getPosition()).thenReturn((short) 1);
+        when(junk.getQuantity()).thenReturn((short) 1);
+        when(bag.getItem((short) 1)).thenReturn(junk);
+        var inventory = mock(server.agents.integration.InventoryGateway.class);
+        doAnswer(call -> { harness.freeSlots++; return null; }).when(inventory).dropItem(
+                eq(harness.agent), eq(client.inventory.InventoryType.ETC), eq((short) 1), eq((short) 1));
+        try (var inventoryRuntime = org.mockito.Mockito.mockStatic(
+                server.agents.integration.AgentInventoryGatewayRuntime.class)) {
+            inventoryRuntime.when(server.agents.integration.AgentInventoryGatewayRuntime::inventory)
+                    .thenReturn(inventory);
+            harness.tick();
+        }
+        assertEquals(2, harness.freeSlots);
+        assertTrue(harness.transitions.contains("start:2336"));
+        verify(inventory).dropItem(harness.agent, client.inventory.InventoryType.ETC, (short) 1, (short) 1);
     }
 
     @Test
@@ -693,9 +802,9 @@ class AgentMushroomKingdomRuntimeTest {
             when(gateway.groundPoint(eq(map), org.mockito.ArgumentMatchers.any(Point.class)))
                     .thenAnswer(invocation -> new Point(invocation.getArgument(1)));
             doAnswer(invocation -> {
-                position = new Point(invocation.getArgument(2));
+                position = new Point(invocation.getArgument(1));
                 return null;
-            }).when(gateway).stagePosition(eq(entry), eq(agent), org.mockito.ArgumentMatchers.any(Point.class));
+            }).when(gateway).navigate(eq(entry), org.mockito.ArgumentMatchers.any(Point.class), eq(true));
             when(gateway.questStatus(eq(agent), anyInt())).thenAnswer(invocation ->
                     status(invocation.getArgument(1)));
             when(gateway.questProgress(eq(agent), anyInt(), anyInt())).thenAnswer(invocation -> {
@@ -752,7 +861,8 @@ class AgentMushroomKingdomRuntimeTest {
                 return null;
             }).when(gateway).grind(eq(entry), org.mockito.ArgumentMatchers.anySet(),
                     org.mockito.ArgumentMatchers.anySet());
-            when(gateway.lootNearby(eq(agent), org.mockito.ArgumentMatchers.anySet())).thenReturn(true);
+            when(gateway.prepareObjectiveLoot(eq(entry), eq(agent),
+                    org.mockito.ArgumentMatchers.anySet())).thenReturn(false);
         }
 
         private void runToCompletion() {

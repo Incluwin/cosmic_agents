@@ -17,6 +17,7 @@ import server.agents.capabilities.movement.AgentGroundingService;
 import server.agents.capabilities.movement.AgentHorizontalBoundaryStateRuntime;
 import server.agents.capabilities.movement.AgentJumpActionService;
 import server.agents.capabilities.looting.AgentLootEligibility;
+import server.agents.capabilities.looting.AgentGrindLootTargetService;
 import server.agents.capabilities.movement.AgentFarmAnchorStateRuntime;
 import server.agents.capabilities.navigation.AgentNavigationGraphService;
 import server.agents.capabilities.navigation.AgentRouteOutcome;
@@ -683,6 +684,12 @@ public enum CosmicPrimitiveCapabilityGateway implements PrimitiveCapabilityGatew
             }
         }
         return found;
+    }
+
+    @Override
+    public boolean prepareObjectiveLoot(AgentRuntimeEntry entry, Character agent,
+                                        Set<Integer> itemIds) {
+        return AgentGrindLootTargetService.prepareNearestObjectiveItem(entry, agent, itemIds);
     }
 
     @Override
