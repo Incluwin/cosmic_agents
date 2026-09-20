@@ -1007,6 +1007,7 @@ public class Server {
         }
 
         AgentPopulationRuntime.start();
+        server.agents.integration.typesafe.JevUsageReporter.start();
         startDatabaseConsoleBridge();
         startAgentDirectorBridge();
         startAgentMapGraphViewer();
