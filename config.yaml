@@ -292,6 +292,8 @@ server:
     USE_GACHA_V2: false                                     # Opt-in database-console gachapon and mob-level global-drop eligibility. False preserves stock Cosmic rolls.
     USE_ENABLE_FULL_RESPAWN: false                          # At respawn task, always respawn missing mobs when they're available. Spawn count doesn't depend on how many players are currently there.
     USE_ENABLE_CHAT_LOG: false                              # Write in-game chat to log
+    USE_TYPESAFE_NAME_SCREEN: false                         # Optional Jev character-name screening; requires TYPESAFE_API_KEY.
+    USE_TYPESAFE_REPORT_TRIAGE: false                       # Optional Jev player-report triage; requires TYPESAFE_API_KEY.
     USE_MAP_OWNERSHIP_SYSTEM: false                         # Flag to enable/disable map ownership system
     USE_FISHING_SYSTEM: false                               # Flag to enable/disable custom fishing system
     USE_NPCS_SCRIPTABLE: true                               # Flag to enable/disable serverside predefined script NPCs.
